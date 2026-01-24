@@ -28,4 +28,4 @@ When the lid angle drops below the threshold, the current brightness is saved an
 
 ## Requirements
 
-- macOS with lid angle sensor (MacBook Pro/Air with Apple Silicon or recent Intel)
+- MacBook Air or MacBook Pro with Apple Silicon (M2, M3, M4)

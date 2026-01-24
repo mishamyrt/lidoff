@@ -4,6 +4,15 @@ Daemon that turns off MacBook display brightness when the lid is partially close
 
 ## Installation
 
+**Quick install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mishamyrt/lidoff/master/install.sh | bash
+lidoff --install
+```
+
+**From source:**
+
 ```bash
 make
 ./build/lidoff --install

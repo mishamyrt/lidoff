@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
     branches: [master]
 
@@ -23,3 +24,20 @@ jobs:
         with:
           name: lidoff
           path: build/lidoff
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lidoff
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lidoff

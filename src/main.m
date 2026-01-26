@@ -7,9 +7,13 @@
 #import <signal.h>
 #import "lid_sensor.h"
 #import "brightness.h"
+#import "caffeinate.h"
 
 #define DEFAULT_THRESHOLD   30
-#define DEFAULT_INTERVAL    500
+#define DEFAULT_INTERVAL    300
+#define FULL_CLOSE_ANGLE    10
+#define PARTIAL_STABILITY_SAMPLES 2
+#define POST_CLOSE_GRACE_SECONDS 1.0
 
 #define LAUNCH_AGENT_LABEL  @"co.myrt.lidoff"
 #define LAUNCH_AGENT_PATH   @"~/Library/LaunchAgents/co.myrt.lidoff.plist"
@@ -18,6 +22,8 @@ static BOOL shouldRun = YES;
 static float savedBrightness = -1.0f;
 static BOOL brightnessLowered = NO;
 static BOOL verbose = NO;
+static int partialStreak = 0;
+static NSTimeInterval lastFullCloseAt = 0.0;
 
 static void signalHandler(int sig) {
     (void)sig;
@@ -36,8 +42,9 @@ static void printUsage(const char *programName) {
     printf("  -i, --interval <ms>         Polling interval in ms (default: %d)\n", DEFAULT_INTERVAL);
     printf("  -v, --verbose               Log current lid angle\n\n");
     printf("Behavior:\n");
-    printf("  angle < threshold: save brightness, set to 0\n");
-    printf("  angle >= threshold: restore saved brightness\n");
+    printf("  angle < %d: fully closed, restore brightness and end caffeinate\n", FULL_CLOSE_ANGLE);
+    printf("  angle < threshold: save brightness, set to 0, start caffeinate\n");
+    printf("  angle >= threshold: restore saved brightness, end caffeinate\n");
 }
 
 static NSString *getExecutablePath(void) {
@@ -170,29 +177,61 @@ static void runMonitor(int threshold, int intervalMs) {
                 NSLog(@"lidoff: angle %d°", angle);
             }
             
-            if (angle < threshold) {
-                if (!brightnessLowered) {
-                    savedBrightness = BrightnessGet();
-                    if (savedBrightness >= 0.0f) {
-                        BrightnessSet(0.0f);
-                        brightnessLowered = YES;
-                    }
-                }
-            } else {
+            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+            
+            if (angle < FULL_CLOSE_ANGLE) {
+                // Lid fully closed - restore brightness and end caffeinate
+                // This allows normal sleep behavior when lid is completely closed
+                lastFullCloseAt = now;
+                partialStreak = 0;
                 if (brightnessLowered && savedBrightness >= 0.0f) {
+                    NSLog(@"lidoff: restoring brightness to %f", savedBrightness);
                     BrightnessSet(savedBrightness);
                     brightnessLowered = NO;
                     savedBrightness = -1.0f;
                 }
+                CaffeinateStop();
+            } else if (angle < threshold) {
+                // Lid partially closed - dim display and prevent sleep
+                NSTimeInterval sinceClose = (lastFullCloseAt > 0.0)
+                    ? (now - lastFullCloseAt)
+                    : POST_CLOSE_GRACE_SECONDS;
+                
+                if (sinceClose < POST_CLOSE_GRACE_SECONDS) {
+                    partialStreak = 0;
+                } else {
+                    partialStreak++;
+                    if (!brightnessLowered && partialStreak >= PARTIAL_STABILITY_SAMPLES) {
+                        NSLog(@"lidoff: dimming display to 0.0f");
+                        savedBrightness = BrightnessGet();
+                        if (savedBrightness >= 0.0f) {
+                            BrightnessSet(0.0f);
+                            brightnessLowered = YES;
+                            CaffeinateStart();
+                        }
+                    }
+                }
+            } else {
+                // Lid open - restore brightness and end caffeinate
+                partialStreak = 0;
+                if (brightnessLowered && savedBrightness >= 0.0f) {
+                    NSLog(@"lidoff: restoring brightness to %f", savedBrightness);
+                    BrightnessSet(savedBrightness);
+                    brightnessLowered = NO;
+                    savedBrightness = -1.0f;
+                }
+                CaffeinateStop();
             }
             
             [NSThread sleepForTimeInterval:interval];
         }
     }
     
+    // Cleanup on exit
     if (brightnessLowered && savedBrightness >= 0.0f) {
         BrightnessSet(savedBrightness);
     }
+    CaffeinateStop();
 }
 
 int main(int argc, const char *argv[]) {

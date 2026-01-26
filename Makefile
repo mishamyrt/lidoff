@@ -7,7 +7,10 @@ LDFLAGS = -Wl,-dead_strip
 
 SRC_DIR = src
 BUILD_DIR = build
-SOURCES = $(SRC_DIR)/main.m $(SRC_DIR)/lid_sensor.m $(SRC_DIR)/brightness.m
+SOURCES = \
+	$(shell find src/ -type f -name '*.m')
+SOURCE_HEADERS = \
+	$(shell find src/ -type f -name '*.h')
 TARGET = $(BUILD_DIR)/lidoff
 
 .PHONY: all clean install uninstall
@@ -17,9 +20,9 @@ all: $(TARGET)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): $(SOURCES) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(FRAMEWORKS) -o $@ $(SOURCES)
-
+$(TARGET): $(SOURCES) $(SOURCE_HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(FRAMEWORKS) -o $@ \
+	$(SOURCES)
 clean:
 	rm -rf $(BUILD_DIR)
 

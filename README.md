@@ -28,12 +28,18 @@ lidoff --uninstall                   Remove LaunchAgent
 
 **Options:**
 - `-t, --threshold <degrees>` — Lid angle threshold (default: 30)
-- `-i, --interval <ms>` — Polling interval (default: 500)
+- `-i, --interval <ms>` — Polling interval (default: 300)
 - `-v, --verbose` — Log current lid angle
 
 ## How it works
 
-When the lid angle drops below the threshold, the current brightness is saved and set to 0. When the lid is opened again, brightness is restored.
+The daemon monitors lid angle and manages display brightness with caffeinate session:
+
+- **Lid partially closed** (angle < threshold, but ≥ 5°): saves current brightness, sets it to 0, and starts a caffeinate session to prevent sleep
+- **Lid opened** (angle ≥ threshold): restores saved brightness and ends caffeinate session
+- **Lid fully closed** (angle < 5°): restores brightness and ends caffeinate session, allowing normal sleep behavior
+
+This prevents the issue where fully closing the lid would leave the display at zero brightness after unlock.
 
 ## Requirements
 

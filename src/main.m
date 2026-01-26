@@ -8,12 +8,16 @@
 #import "lid_sensor.h"
 #import "brightness.h"
 #import "caffeinate.h"
+#import <IOKit/IOKitLib.h>
+#import <IOKit/pwr_mgt/IOPMLib.h>
+#import <IOKit/IOMessage.h>
 
 #define DEFAULT_THRESHOLD   30
 #define DEFAULT_INTERVAL    300
 #define FULL_CLOSE_ANGLE    10
 #define PARTIAL_STABILITY_SAMPLES 2
 #define POST_CLOSE_GRACE_SECONDS 1.0
+#define POST_WAKE_GRACE_SECONDS 1.0
 
 #define LAUNCH_AGENT_LABEL  @"co.myrt.lidoff"
 #define LAUNCH_AGENT_PATH   @"~/Library/LaunchAgents/co.myrt.lidoff.plist"
@@ -22,8 +26,16 @@ static BOOL shouldRun = YES;
 static float savedBrightness = -1.0f;
 static BOOL brightnessLowered = NO;
 static BOOL verbose = NO;
-static int partialStreak = 0;
+static NSObject *stateLock = nil;
+static int lastAngle = -1;
+static int belowThresholdStreak = 0;
 static NSTimeInterval lastFullCloseAt = 0.0;
+static NSTimeInterval lastWakeAt = 0.0;
+static BOOL systemSleeping = NO;
+
+static io_connect_t powerRootPort = 0;
+static IONotificationPortRef powerNotifyPort = NULL;
+static io_object_t powerNotifier = 0;
 
 static void signalHandler(int sig) {
     (void)sig;
@@ -161,6 +173,87 @@ static BOOL uninstallLaunchAgent(void) {
     return YES;
 }
 
+static void restoreBrightnessAndStopLocked(BOOL logRestore) {
+    if (brightnessLowered && savedBrightness >= 0.0f) {
+        if (logRestore) {
+            NSLog(@"lidoff: restoring brightness to %f", savedBrightness);
+        }
+        BrightnessSet(savedBrightness);
+        brightnessLowered = NO;
+        savedBrightness = -1.0f;
+    }
+    CaffeinateStop();
+}
+
+static void powerCallback(void *refCon, io_service_t service, natural_t messageType, void *messageArgument) {
+    (void)refCon;
+    (void)service;
+    
+    switch (messageType) {
+        case kIOMessageCanSystemSleep:
+            IOAllowPowerChange(powerRootPort, (long)messageArgument);
+            break;
+        case kIOMessageSystemWillSleep: {
+            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+            @synchronized(stateLock) {
+                systemSleeping = YES;
+                lastFullCloseAt = now;
+                lastWakeAt = 0.0;
+                lastAngle = -1;
+                belowThresholdStreak = 0;
+                restoreBrightnessAndStopLocked(NO);
+            }
+            IOAllowPowerChange(powerRootPort, (long)messageArgument);
+            break;
+        }
+        case kIOMessageSystemHasPoweredOn: {
+            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+            @synchronized(stateLock) {
+                systemSleeping = NO;
+                lastWakeAt = now;
+                lastFullCloseAt = now;
+                lastAngle = -1;
+                belowThresholdStreak = 0;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static void registerPowerNotifications(void) {
+    powerRootPort = IORegisterForSystemPower(
+        NULL,
+        &powerNotifyPort,
+        powerCallback,
+        &powerNotifier
+    );
+    
+    if (powerRootPort == 0 || powerNotifyPort == NULL) {
+        fprintf(stderr, "lidoff: failed to register power notifications\n");
+        return;
+    }
+    
+    CFRunLoopAddSource(
+        CFRunLoopGetCurrent(),
+        IONotificationPortGetRunLoopSource(powerNotifyPort),
+        kCFRunLoopCommonModes
+    );
+    
+    CFRunLoopRun();
+}
+
+static void startPowerMonitor(void) {
+    NSThread *powerThread = [[NSThread alloc] initWithBlock:^{
+        @autoreleasepool {
+            registerPowerNotifications();
+        }
+    }];
+    powerThread.name = @"lidoff.power";
+    [powerThread start];
+}
+
 static void runMonitor(int threshold, int intervalMs) {
     NSTimeInterval interval = intervalMs / 1000.0;
     
@@ -179,59 +272,72 @@ static void runMonitor(int threshold, int intervalMs) {
             
             NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
             
-            if (angle < FULL_CLOSE_ANGLE) {
-                // Lid fully closed - restore brightness and end caffeinate
-                // This allows normal sleep behavior when lid is completely closed
-                lastFullCloseAt = now;
-                partialStreak = 0;
-                if (brightnessLowered && savedBrightness >= 0.0f) {
-                    NSLog(@"lidoff: restoring brightness to %f", savedBrightness);
-                    BrightnessSet(savedBrightness);
-                    brightnessLowered = NO;
-                    savedBrightness = -1.0f;
-                }
-                CaffeinateStop();
-            } else if (angle < threshold) {
-                // Lid partially closed - dim display and prevent sleep
-                NSTimeInterval sinceClose = (lastFullCloseAt > 0.0)
-                    ? (now - lastFullCloseAt)
-                    : POST_CLOSE_GRACE_SECONDS;
-                
-                if (sinceClose < POST_CLOSE_GRACE_SECONDS) {
-                    partialStreak = 0;
-                } else {
-                    partialStreak++;
-                    if (!brightnessLowered && partialStreak >= PARTIAL_STABILITY_SAMPLES) {
-                        NSLog(@"lidoff: dimming display to 0.0f");
-                        savedBrightness = BrightnessGet();
-                        if (savedBrightness >= 0.0f) {
-                            BrightnessSet(0.0f);
-                            brightnessLowered = YES;
-                            CaffeinateStart();
+            BOOL skipThisCycle = NO;
+            
+            @synchronized(stateLock) {
+                if (systemSleeping) {
+                    skipThisCycle = YES;
+                } else if (angle < FULL_CLOSE_ANGLE) {
+                    // Lid fully closed - restore brightness and end caffeinate
+                    // This allows normal sleep behavior when lid is completely closed
+                    lastFullCloseAt = now;
+                    belowThresholdStreak = 0;
+                    restoreBrightnessAndStopLocked(YES);
+                } else if (angle < threshold) {
+                    // Lid partially closed - dim display only on stable, closing transitions
+                    NSTimeInterval sinceClose = (lastFullCloseAt > 0.0)
+                        ? (now - lastFullCloseAt)
+                        : POST_CLOSE_GRACE_SECONDS;
+                    NSTimeInterval sinceWake = (lastWakeAt > 0.0)
+                        ? (now - lastWakeAt)
+                        : POST_WAKE_GRACE_SECONDS;
+                    BOOL graceActive = (sinceClose < POST_CLOSE_GRACE_SECONDS) ||
+                                       (sinceWake < POST_WAKE_GRACE_SECONDS);
+                    
+                    if (brightnessLowered) {
+                        belowThresholdStreak = 0;
+                    } else if (graceActive) {
+                        belowThresholdStreak = 0;
+                    } else {
+                        BOOL notOpening = (lastAngle == -1) ? YES : (angle <= lastAngle);
+                        if (notOpening) {
+                            belowThresholdStreak++;
+                        } else {
+                            belowThresholdStreak = 0;
+                        }
+                        
+                        if (belowThresholdStreak >= PARTIAL_STABILITY_SAMPLES) {
+                            NSLog(@"lidoff: dimming display to 0.0f");
+                            savedBrightness = BrightnessGet();
+                            if (savedBrightness >= 0.0f) {
+                                BrightnessSet(0.0f);
+                                brightnessLowered = YES;
+                                CaffeinateStart();
+                            }
                         }
                     }
+                } else {
+                    // Lid open - restore brightness and end caffeinate
+                    belowThresholdStreak = 0;
+                    restoreBrightnessAndStopLocked(YES);
                 }
-            } else {
-                // Lid open - restore brightness and end caffeinate
-                partialStreak = 0;
-                if (brightnessLowered && savedBrightness >= 0.0f) {
-                    NSLog(@"lidoff: restoring brightness to %f", savedBrightness);
-                    BrightnessSet(savedBrightness);
-                    brightnessLowered = NO;
-                    savedBrightness = -1.0f;
+                
+                if (!skipThisCycle) {
+                    lastAngle = angle;
                 }
-                CaffeinateStop();
             }
             
             [NSThread sleepForTimeInterval:interval];
+            if (skipThisCycle) {
+                continue;
+            }
         }
     }
     
     // Cleanup on exit
-    if (brightnessLowered && savedBrightness >= 0.0f) {
-        BrightnessSet(savedBrightness);
+    @synchronized(stateLock) {
+        restoreBrightnessAndStopLocked(NO);
     }
-    CaffeinateStop();
 }
 
 int main(int argc, const char *argv[]) {
@@ -293,6 +399,9 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "lidoff: failed to initialize lid sensor\n");
             return 1;
         }
+        
+        stateLock = [NSObject new];
+        startPowerMonitor();
         
         runMonitor(threshold, interval);
         

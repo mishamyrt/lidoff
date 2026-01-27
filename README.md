@@ -35,9 +35,11 @@ lidoff --uninstall                   Remove LaunchAgent
 
 The daemon monitors lid angle and manages display brightness with caffeinate session:
 
-- **Lid partially closed** (angle < threshold, but ≥ 5°): saves current brightness, sets it to 0, and starts a caffeinate session to prevent sleep
-- **Lid opened** (angle ≥ threshold): restores saved brightness and ends caffeinate session
-- **Lid fully closed** (angle < 5°): restores brightness and ends caffeinate session, allowing normal sleep behavior
+- **Lid partially closed** (angle < threshold, but ≥ 10°): saves current brightness, sets it to 0, starts a caffeinate session to prevent sleep, and disables external displays by setting DDC brightness/contrast and gamma to 0
+- **Lid opened** (angle ≥ threshold): restores saved brightness, restores external display state, and ends caffeinate session
+- **Lid fully closed** (angle < 10°): restores brightness, restores external display state, and ends caffeinate session, allowing normal sleep behavior
+
+External display control uses DDC/CI (private APIs). Some monitors or ports may not support DDC, in which case only gamma is applied.
 
 This prevents the issue where fully closing the lid would leave the display at zero brightness after unlock.
 

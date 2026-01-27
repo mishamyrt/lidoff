@@ -15,6 +15,19 @@ static DSSetBrightnessFunc DSSetBrightness = NULL;
 static BOOL displayServicesLoaded = NO;
 static BOOL displayServicesAvailable = NO;
 
+static CGDirectDisplayID brightnessTargetDisplay(void) {
+    CGDirectDisplayID displays[16];
+    CGDisplayCount count = 0;
+    if (CGGetOnlineDisplayList(16, displays, &count) == kCGErrorSuccess) {
+        for (CGDisplayCount i = 0; i < count; i++) {
+            if (CGDisplayIsBuiltin(displays[i])) {
+                return displays[i];
+            }
+        }
+    }
+    return CGMainDisplayID();
+}
+
 static void loadDisplayServices(void) {
     if (displayServicesLoaded) return;
     displayServicesLoaded = YES;
@@ -35,7 +48,7 @@ float BrightnessGet(void) {
     if (!displayServicesAvailable) return -1.0f;
     
     float brightness = 0.0f;
-    int result = DSGetBrightness(CGMainDisplayID(), &brightness);
+    int result = DSGetBrightness(brightnessTargetDisplay(), &brightness);
     return (result == 0) ? brightness : -1.0f;
 }
 
@@ -45,7 +58,7 @@ BOOL BrightnessSet(float brightness) {
     
     if (brightness < 0.0f) brightness = 0.0f;
     if (brightness > 1.0f) brightness = 1.0f;
-    return (DSSetBrightness(CGMainDisplayID(), brightness) == 0);
+    return (DSSetBrightness(brightnessTargetDisplay(), brightness) == 0);
 }
 
 BOOL BrightnessIsDisplayAvailable(void) {

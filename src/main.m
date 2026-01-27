@@ -8,6 +8,7 @@
 #import "lid_sensor.h"
 #import "brightness.h"
 #import "caffeinate.h"
+#import "external_display.h"
 #import <IOKit/IOKitLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import <IOKit/IOMessage.h>
@@ -202,6 +203,7 @@ static void powerCallback(void *refCon, io_service_t service, natural_t messageT
                 lastAngle = -1;
                 belowThresholdStreak = 0;
                 restoreBrightnessAndStopLocked(NO);
+                ExternalDisplaysRestore();
             }
             IOAllowPowerChange(powerRootPort, (long)messageArgument);
             break;
@@ -283,6 +285,7 @@ static void runMonitor(int threshold, int intervalMs) {
                     lastFullCloseAt = now;
                     belowThresholdStreak = 0;
                     restoreBrightnessAndStopLocked(YES);
+                    ExternalDisplaysRestore();
                 } else if (angle < threshold) {
                     // Lid partially closed - dim display only on stable, closing transitions
                     NSTimeInterval sinceClose = (lastFullCloseAt > 0.0)
@@ -296,6 +299,9 @@ static void runMonitor(int threshold, int intervalMs) {
                     
                     if (brightnessLowered) {
                         belowThresholdStreak = 0;
+                        if (!ExternalDisplaysAreDisabled()) {
+                            ExternalDisplaysDisable();
+                        }
                     } else if (graceActive) {
                         belowThresholdStreak = 0;
                     } else {
@@ -307,6 +313,9 @@ static void runMonitor(int threshold, int intervalMs) {
                         }
                         
                         if (belowThresholdStreak >= PARTIAL_STABILITY_SAMPLES) {
+                            if (!ExternalDisplaysAreDisabled()) {
+                                ExternalDisplaysDisable();
+                            }
                             NSLog(@"lidoff: dimming display to 0.0f");
                             savedBrightness = BrightnessGet();
                             if (savedBrightness >= 0.0f) {
@@ -320,6 +329,7 @@ static void runMonitor(int threshold, int intervalMs) {
                     // Lid open - restore brightness and end caffeinate
                     belowThresholdStreak = 0;
                     restoreBrightnessAndStopLocked(YES);
+                    ExternalDisplaysRestore();
                 }
                 
                 if (!skipThisCycle) {
@@ -337,6 +347,7 @@ static void runMonitor(int threshold, int intervalMs) {
     // Cleanup on exit
     @synchronized(stateLock) {
         restoreBrightnessAndStopLocked(NO);
+        ExternalDisplaysRestore();
     }
 }
 

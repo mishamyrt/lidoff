@@ -1,10 +1,11 @@
 //
-//  external_display.m
+//  external_display_gamma.m
 //  lidoff - external display DDC + gamma dimming
 //
 
 #import "external_display.h"
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreGraphics/CGDisplayConfiguration.h>
 #import <IOKit/IOKitLib.h>
 #import <IOKit/i2c/IOI2CInterface.h>
 #include <stdlib.h>
@@ -32,11 +33,13 @@ typedef struct {
 
 static DisplayBackup *displayBackups = NULL;
 static size_t displayBackupCount = 0;
+static size_t displayBackupCapacity = 0;
 static BOOL externalDisplaysDisabled = NO;
 
 static void clearBackups(void) {
     if (!displayBackups) {
         displayBackupCount = 0;
+        displayBackupCapacity = 0;
         return;
     }
     
@@ -49,6 +52,36 @@ static void clearBackups(void) {
     free(displayBackups);
     displayBackups = NULL;
     displayBackupCount = 0;
+    displayBackupCapacity = 0;
+}
+
+void ExternalDisplayGammaClearBackups(void) {
+    clearBackups();
+}
+
+BOOL ExternalDisplayGammaPrepare(size_t displayCount) {
+    clearBackups();
+    if (displayCount == 0) {
+        return YES;
+    }
+    
+    displayBackups = calloc(displayCount, sizeof(DisplayBackup));
+    if (!displayBackups) {
+        return NO;
+    }
+    
+    displayBackupCapacity = displayCount;
+    return YES;
+}
+
+void ExternalDisplayGammaFinalize(void) {
+    if (displayBackupCount == 0) {
+        clearBackups();
+    }
+}
+
+BOOL ExternalDisplayGammaHasBackups(void) {
+    return displayBackupCount > 0;
 }
 
 static uint8_t ddcChecksum(const uint8_t *payload, size_t length) {
@@ -172,12 +205,90 @@ static BOOL backupAndZeroGamma(CGDirectDisplayID displayID, DisplayBackup *backu
     return YES;
 }
 
+static void restoreDisplayFromBackup(const DisplayBackup *backup) {
+    if (!backup) {
+        return;
+    }
+    
+    if (backup->gammaSampleCount > 0 &&
+        backup->gammaRed &&
+        backup->gammaGreen &&
+        backup->gammaBlue) {
+        CGSetDisplayTransferByTable(
+            backup->displayID,
+            backup->gammaSampleCount,
+            backup->gammaRed,
+            backup->gammaGreen,
+            backup->gammaBlue
+        );
+    }
+    
+    io_service_t framebuffer = CGDisplayIOServicePort(backup->displayID);
+    if (framebuffer == MACH_PORT_NULL) {
+        return;
+    }
+    if (backup->hasBrightness) {
+        ddcSetVCP(framebuffer, 0x10, backup->brightness);
+    }
+    if (backup->hasContrast) {
+        ddcSetVCP(framebuffer, 0x12, backup->contrast);
+    }
+}
+
+BOOL ExternalDisplayGammaDisableDisplay(CGDirectDisplayID displayID) {
+    DisplayBackup backup = {
+        .displayID = displayID,
+        .brightness = 0,
+        .contrast = 0,
+        .hasBrightness = NO,
+        .hasContrast = NO,
+        .gammaSampleCount = 0,
+        .gammaRed = NULL,
+        .gammaGreen = NULL,
+        .gammaBlue = NULL
+    };
+    
+    io_service_t framebuffer = CGDisplayIOServicePort(displayID);
+    if (framebuffer != MACH_PORT_NULL) {
+        uint16_t value = 0;
+        if (ddcGetVCP(framebuffer, 0x10, &value)) {
+            backup.brightness = value;
+            backup.hasBrightness = YES;
+            ddcSetVCP(framebuffer, 0x10, 0);
+        }
+        if (ddcGetVCP(framebuffer, 0x12, &value)) {
+            backup.contrast = value;
+            backup.hasContrast = YES;
+            ddcSetVCP(framebuffer, 0x12, 0);
+        }
+    }
+    
+    backupAndZeroGamma(displayID, &backup);
+    
+    if (!displayBackups || displayBackupCount >= displayBackupCapacity) {
+        restoreDisplayFromBackup(&backup);
+        free(backup.gammaRed);
+        free(backup.gammaGreen);
+        free(backup.gammaBlue);
+        return NO;
+    }
+    
+    displayBackups[displayBackupCount++] = backup;
+    return YES;
+}
+
+void ExternalDisplayGammaRestoreAll(void) {
+    for (size_t i = 0; i < displayBackupCount; i++) {
+        restoreDisplayFromBackup(&displayBackups[i]);
+    }
+    
+    clearBackups();
+}
+
 BOOL ExternalDisplaysDisable(void) {
     if (externalDisplaysDisabled) {
         return YES;
     }
-    
-    clearBackups();
     
     CGDirectDisplayID displays[32];
     CGDisplayCount displayCount = 0;
@@ -186,8 +297,16 @@ BOOL ExternalDisplaysDisable(void) {
         return NO;
     }
     
-    DisplayBackup *newBackups = calloc(displayCount, sizeof(DisplayBackup));
-    size_t newCount = 0;
+    if (!ExternalDisplaySkylightPrepare(displayCount) ||
+        !ExternalDisplayMirroringPrepare(displayCount) ||
+        !ExternalDisplayGammaPrepare(displayCount)) {
+        ExternalDisplaySkylightClearBackups();
+        ExternalDisplayMirroringClearBackups();
+        ExternalDisplayGammaClearBackups();
+        return NO;
+    }
+    
+    BOOL anyDisabled = NO;
     
     for (CGDisplayCount i = 0; i < displayCount; i++) {
         CGDirectDisplayID displayID = displays[i];
@@ -195,83 +314,40 @@ BOOL ExternalDisplaysDisable(void) {
             continue;
         }
         
-        DisplayBackup backup = {
-            .displayID = displayID,
-            .brightness = 0,
-            .contrast = 0,
-            .hasBrightness = NO,
-            .hasContrast = NO,
-            .gammaSampleCount = 0,
-            .gammaRed = NULL,
-            .gammaGreen = NULL,
-            .gammaBlue = NULL
-        };
-        
-        io_service_t framebuffer = CGDisplayIOServicePort(displayID);
-        if (framebuffer != MACH_PORT_NULL) {
-            uint16_t value = 0;
-            if (ddcGetVCP(framebuffer, 0x10, &value)) {
-                backup.brightness = value;
-                backup.hasBrightness = YES;
-                ddcSetVCP(framebuffer, 0x10, 0);
-            }
-            if (ddcGetVCP(framebuffer, 0x12, &value)) {
-                backup.contrast = value;
-                backup.hasContrast = YES;
-                ddcSetVCP(framebuffer, 0x12, 0);
-            }
+        if (ExternalDisplaySkylightDisableDisplay(displayID)) {
+            anyDisabled = YES;
+            continue;
         }
         
-        backupAndZeroGamma(displayID, &backup);
+        if (ExternalDisplayMirroringDisableDisplay(displayID)) {
+            anyDisabled = YES;
+            continue;
+        }
         
-        newBackups[newCount] = backup;
-        newCount++;
+        if (ExternalDisplayGammaDisableDisplay(displayID)) {
+            anyDisabled = YES;
+        }
     }
     
-    if (newCount == 0) {
-        free(newBackups);
-        externalDisplaysDisabled = NO;
-        return YES;
-    }
+    ExternalDisplaySkylightFinalize();
+    ExternalDisplayMirroringFinalize();
+    ExternalDisplayGammaFinalize();
     
-    displayBackups = newBackups;
-    displayBackupCount = newCount;
-    externalDisplaysDisabled = YES;
+    externalDisplaysDisabled = anyDisabled;
     return YES;
 }
 
 BOOL ExternalDisplaysRestore(void) {
-    if (!externalDisplaysDisabled && displayBackupCount == 0) {
+    if (!externalDisplaysDisabled &&
+        !ExternalDisplaySkylightHasBackups() &&
+        !ExternalDisplayMirroringHasBackups() &&
+        !ExternalDisplayGammaHasBackups()) {
         return YES;
     }
     
-    for (size_t i = 0; i < displayBackupCount; i++) {
-        if (displayBackups[i].gammaSampleCount > 0 &&
-            displayBackups[i].gammaRed &&
-            displayBackups[i].gammaGreen &&
-            displayBackups[i].gammaBlue) {
-            CGSetDisplayTransferByTable(
-                displayBackups[i].displayID,
-                displayBackups[i].gammaSampleCount,
-                displayBackups[i].gammaRed,
-                displayBackups[i].gammaGreen,
-                displayBackups[i].gammaBlue
-            );
-        }
-        
-        io_service_t framebuffer = CGDisplayIOServicePort(displayBackups[i].displayID);
-        if (framebuffer == MACH_PORT_NULL) {
-            continue;
-        }
-        if (displayBackups[i].hasBrightness) {
-            ddcSetVCP(framebuffer, 0x10, displayBackups[i].brightness);
-        }
-        if (displayBackups[i].hasContrast) {
-            ddcSetVCP(framebuffer, 0x12, displayBackups[i].contrast);
-        }
-    }
-    
-    clearBackups();
+    ExternalDisplaySkylightRestoreAll();
+    ExternalDisplayMirroringRestoreAll();
+    ExternalDisplayGammaRestoreAll();
     externalDisplaysDisabled = NO;
     return YES;
 }

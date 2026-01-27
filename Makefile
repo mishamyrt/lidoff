@@ -8,9 +8,18 @@ LDFLAGS = -Wl,-dead_strip
 SRC_DIR = src
 BUILD_DIR = build
 SOURCES = \
-	$(shell find src/ -type f -name '*.m')
+	$(SRC_DIR)/main.m \
+	$(SRC_DIR)/lid_sensor.m \
+	$(SRC_DIR)/brightness.m \
+	$(SRC_DIR)/caffeinate.m \
+	$(SRC_DIR)/external_display_gamma.m \
+	$(SRC_DIR)/external_display_mirroring.m \
+	$(SRC_DIR)/external_display_skylight.m
 SOURCE_HEADERS = \
-	$(shell find src/ -type f -name '*.h')
+	$(SRC_DIR)/lid_sensor.h \
+	$(SRC_DIR)/brightness.h \
+	$(SRC_DIR)/caffeinate.h \
+	$(SRC_DIR)/external_display.h
 TARGET = $(BUILD_DIR)/lidoff
 
 .PHONY: all clean install uninstall

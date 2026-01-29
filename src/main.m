@@ -23,6 +23,8 @@
 #define LAUNCH_AGENT_LABEL  @"co.myrt.lidoff"
 #define LAUNCH_AGENT_PATH   @"~/Library/LaunchAgents/co.myrt.lidoff.plist"
 
+#define VERSION_STRING [NSString stringWithFormat:@"%s", VERSION]
+
 static BOOL shouldRun = YES;
 static float savedBrightness = -1.0f;
 static BOOL brightnessLowered = NO;
@@ -50,6 +52,7 @@ static void printUsage(const char *programName) {
     printf("  %s --install [-t threshold]      Install as LaunchAgent\n", programName);
     printf("  %s --uninstall                   Remove LaunchAgent\n", programName);
     printf("  %s --help                        Show this help\n\n", programName);
+    printf("  %s --version                     Show version\n\n", programName);
     printf("Options:\n");
     printf("  -t, --threshold <degrees>   Lid angle threshold (default: %d)\n", DEFAULT_THRESHOLD);
     printf("  -i, --interval <ms>         Polling interval in ms (default: %d)\n", DEFAULT_INTERVAL);
@@ -363,6 +366,10 @@ int main(int argc, const char *argv[]) {
             
             if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
                 printUsage(argv[0]);
+                return 0;
+            }
+            else if (strcmp(arg, "--version") == 0) {
+                printf("%s\n", VERSION_STRING.UTF8String);
                 return 0;
             }
             else if (strcmp(arg, "--install") == 0) {

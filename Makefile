@@ -44,6 +44,17 @@ install: $(TARGET) ## install the daemon
 	rm -f "$(HOME)/.local/bin/lidoff"
 	cp $(TARGET) "$(HOME)/.local/bin/lidoff"
 
+.PHONY: publish
+publish: ## publish the daemon
+	git tag "v$(VERSION)"
+	git-cliff -o CHANGELOG.md
+	git tag -d "v$(VERSION)"
+	git add Makefile CHANGELOG.md
+	git commit -m "chore: release v$(VERSION)"
+	git tag "v$(VERSION)"
+	git push
+	git push --tags
+
 .PHONY: help
 help: ## print this message
 	@echo "Usage: make <command>"

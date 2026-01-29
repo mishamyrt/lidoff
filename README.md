@@ -22,7 +22,7 @@ When I discovered the ability to read the angle of the MacBook, I thought that t
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mishamyrt/lidoff/master/install.sh | bash
-lidoff --install
+lidoff --enable
 ```
 
 **From source:**
@@ -32,15 +32,15 @@ git clone https://github.com/mishamyrt/lidoff.git
 cd lidoff
 make
 make install
-lidoff --install
+lidoff --enable
 ```
 
 ## Usage
 
 ```
 lidoff [-t threshold] [-i interval]  Run daemon
-lidoff --install [-t threshold]      Install as LaunchAgent
-lidoff --uninstall                   Remove LaunchAgent
+lidoff --enable [-t threshold]      Install as LaunchAgent
+lidoff --disable                   Remove LaunchAgent
 ```
 
 **Options:**

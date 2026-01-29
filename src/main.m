@@ -49,8 +49,8 @@ static void printUsage(const char *programName) {
     printf("lidoff - MacBook lid angle brightness daemon\n\n");
     printf("Usage:\n");
     printf("  %s [-t threshold] [-i interval]  Run daemon\n", programName);
-    printf("  %s --install [-t threshold]      Install as LaunchAgent\n", programName);
-    printf("  %s --uninstall                   Remove LaunchAgent\n", programName);
+    printf("  %s --enable [-t threshold]      Install as LaunchAgent\n", programName);
+    printf("  %s --disable                   Remove LaunchAgent\n", programName);
     printf("  %s --help                        Show this help\n\n", programName);
     printf("  %s --version                     Show version\n\n", programName);
     printf("Options:\n");
@@ -372,10 +372,10 @@ int main(int argc, const char *argv[]) {
                 printf("%s\n", VERSION_STRING.UTF8String);
                 return 0;
             }
-            else if (strcmp(arg, "--install") == 0) {
+            else if (strcmp(arg, "--enable") == 0) {
                 doInstall = YES;
             }
-            else if (strcmp(arg, "--uninstall") == 0) {
+            else if (strcmp(arg, "--disable") == 0) {
                 doUninstall = YES;
             }
             else if ((strcmp(arg, "-t") == 0 || strcmp(arg, "--threshold") == 0) && i + 1 < argc) {

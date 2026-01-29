@@ -1,6 +1,23 @@
-# 💡 lidoff [![Build](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg)](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml)
+<h1 align="center">
+    lidoff<br>
+    <img src="./docs/logo.svg" alt="lidoff logo" height="25">
+    <br/>
+    <a href="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml">
+        <img src="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg" alt="Build">
+    </a>
+</h1>
 
 Daemon that turns off MacBook display brightness and enables caffeinate when the lid is partially closed.
+
+## What for?
+
+- To start a long refactoring in Cursor/Claude Code, go for a walk and don't worry about your laptop going into sleep mode.
+- To listen to a podcast while falling asleep.
+- To set a movie/game to download overnight.
+
+I noticed that I perform a frequent sequence of actions: start an amphetamine session,  lower the brightness, then raise the brightness and end the session. Sometimes I forgot about the first step, which led to unexpected freezing of code refactoring with LLM. 
+
+When I discovered the ability to read the angle of the MacBook, I thought that this feature was not being used to its full potential. In standard mode, the sensor is used to determine the Boolean state “is the lid open”. Why not add an additional state?
 
 ## Installation
 
@@ -14,6 +31,8 @@ lidoff --install
 **From source:**
 
 ```bash
+git clone https://github.com/mishamyrt/lidoff.git
+cd lidoff
 make
 ./build/lidoff --install
 ```

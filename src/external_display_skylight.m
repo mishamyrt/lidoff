@@ -3,7 +3,7 @@
 //  lidoff - external display control via Skylight
 //
 
-#import "external_display.h"
+#import "external_display_backend.h"
 #import <CoreGraphics/CGDisplayConfiguration.h>
 #import <dlfcn.h>
 #include <stdlib.h>
@@ -127,4 +127,54 @@ void ExternalDisplaySkylightRestoreAll(void) {
         skylightSetDisplayEnabled(skylightBackups[i], YES);
     }
     clearSkylightBackups();
+}
+
+static NSDictionary *copySkylightState(void) {
+    if (!skylightBackups || skylightBackupCount == 0) {
+        return nil;
+    }
+    
+    NSMutableArray *displayIDs = [NSMutableArray arrayWithCapacity:skylightBackupCount];
+    for (size_t i = 0; i < skylightBackupCount; i++) {
+        [displayIDs addObject:@(skylightBackups[i])];
+    }
+    
+    return @{@"displayIDs": displayIDs};
+}
+
+static BOOL restoreSkylightFromState(NSDictionary *state, size_t *restoredCountOut) {
+    NSArray *displayIDs = state[@"displayIDs"];
+    if (![displayIDs isKindOfClass:[NSArray class]]) {
+        return NO;
+    }
+    
+    size_t restoredCount = 0;
+    for (NSNumber *displayIDValue in displayIDs) {
+        CGDirectDisplayID displayID = (CGDirectDisplayID)displayIDValue.unsignedIntValue;
+        if (skylightSetDisplayEnabled(displayID, YES)) {
+            restoredCount++;
+        }
+    }
+    
+    if (restoredCountOut) {
+        *restoredCountOut = restoredCount;
+    }
+    
+    clearSkylightBackups();
+    return YES;
+}
+
+const ExternalDisplayBackend *ExternalDisplayBackendSkylight(void) {
+    static const ExternalDisplayBackend backend = {
+        .name = "skylight",
+        .prepare = ExternalDisplaySkylightPrepare,
+        .finalize = ExternalDisplaySkylightFinalize,
+        .clearBackups = ExternalDisplaySkylightClearBackups,
+        .disableDisplay = ExternalDisplaySkylightDisableDisplay,
+        .restoreAll = ExternalDisplaySkylightRestoreAll,
+        .hasBackups = ExternalDisplaySkylightHasBackups,
+        .copyState = copySkylightState,
+        .restoreFromState = restoreSkylightFromState
+    };
+    return &backend;
 }

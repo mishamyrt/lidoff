@@ -3,7 +3,7 @@
 //  lidoff - external display DDC + gamma dimming
 //
 
-#import "external_display.h"
+#import "external_display_backend.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreGraphics/CGDisplayConfiguration.h>
 #import <IOKit/IOKitLib.h>
@@ -34,7 +34,6 @@ typedef struct {
 static DisplayBackup *displayBackups = NULL;
 static size_t displayBackupCount = 0;
 static size_t displayBackupCapacity = 0;
-static BOOL externalDisplaysDisabled = NO;
 
 static void clearBackups(void) {
     if (!displayBackups) {
@@ -285,73 +284,154 @@ void ExternalDisplayGammaRestoreAll(void) {
     clearBackups();
 }
 
-BOOL ExternalDisplaysDisable(void) {
-    if (externalDisplaysDisabled) {
-        return YES;
+static NSDictionary *copyGammaState(void) {
+    if (!displayBackups || displayBackupCount == 0) {
+        return nil;
     }
     
-    CGDirectDisplayID displays[32];
-    CGDisplayCount displayCount = 0;
-    CGError err = CGGetOnlineDisplayList(32, displays, &displayCount);
-    if (err != kCGErrorSuccess) {
+    NSMutableArray *backups = [NSMutableArray arrayWithCapacity:displayBackupCount];
+    for (size_t i = 0; i < displayBackupCount; i++) {
+        const DisplayBackup *backup = &displayBackups[i];
+        NSMutableDictionary *entry = [NSMutableDictionary dictionary];
+        entry[@"displayID"] = @(backup->displayID);
+        entry[@"brightness"] = @(backup->brightness);
+        entry[@"contrast"] = @(backup->contrast);
+        entry[@"hasBrightness"] = @(backup->hasBrightness);
+        entry[@"hasContrast"] = @(backup->hasContrast);
+        entry[@"gammaSampleCount"] = @(backup->gammaSampleCount);
+        
+        if (backup->gammaSampleCount > 0 &&
+            backup->gammaRed &&
+            backup->gammaGreen &&
+            backup->gammaBlue) {
+            size_t length = (size_t)backup->gammaSampleCount * sizeof(float);
+            entry[@"gammaRed"] = [NSData dataWithBytes:backup->gammaRed length:length];
+            entry[@"gammaGreen"] = [NSData dataWithBytes:backup->gammaGreen length:length];
+            entry[@"gammaBlue"] = [NSData dataWithBytes:backup->gammaBlue length:length];
+        }
+        
+        [backups addObject:entry];
+    }
+    
+    return @{@"backups": backups};
+}
+
+static float *copyGammaTable(NSData *data, uint32_t sampleCount) {
+    if (!data || sampleCount == 0) {
+        return NULL;
+    }
+    
+    size_t expectedLength = (size_t)sampleCount * sizeof(float);
+    if (data.length < expectedLength) {
+        return NULL;
+    }
+    
+    float *table = calloc(sampleCount, sizeof(float));
+    if (!table) {
+        return NULL;
+    }
+    
+    memcpy(table, data.bytes, expectedLength);
+    return table;
+}
+
+static DisplayBackup gammaBackupFromState(NSDictionary *entry, BOOL *validOut) {
+    DisplayBackup backup = {
+        .displayID = 0,
+        .brightness = 0,
+        .contrast = 0,
+        .hasBrightness = NO,
+        .hasContrast = NO,
+        .gammaSampleCount = 0,
+        .gammaRed = NULL,
+        .gammaGreen = NULL,
+        .gammaBlue = NULL
+    };
+    
+    NSNumber *displayIDValue = entry[@"displayID"];
+    if (![displayIDValue isKindOfClass:[NSNumber class]]) {
+        if (validOut) {
+            *validOut = NO;
+        }
+        return backup;
+    }
+    
+    backup.displayID = (CGDirectDisplayID)displayIDValue.unsignedIntValue;
+    backup.hasBrightness = [entry[@"hasBrightness"] boolValue];
+    backup.hasContrast = [entry[@"hasContrast"] boolValue];
+    backup.brightness = (uint16_t)[entry[@"brightness"] unsignedIntValue];
+    backup.contrast = (uint16_t)[entry[@"contrast"] unsignedIntValue];
+    backup.gammaSampleCount = (uint32_t)[entry[@"gammaSampleCount"] unsignedIntValue];
+    
+    if (backup.gammaSampleCount > 0) {
+        NSData *red = entry[@"gammaRed"];
+        NSData *green = entry[@"gammaGreen"];
+        NSData *blue = entry[@"gammaBlue"];
+        backup.gammaRed = copyGammaTable(red, backup.gammaSampleCount);
+        backup.gammaGreen = copyGammaTable(green, backup.gammaSampleCount);
+        backup.gammaBlue = copyGammaTable(blue, backup.gammaSampleCount);
+        if (!backup.gammaRed || !backup.gammaGreen || !backup.gammaBlue) {
+            free(backup.gammaRed);
+            free(backup.gammaGreen);
+            free(backup.gammaBlue);
+            backup.gammaRed = NULL;
+            backup.gammaGreen = NULL;
+            backup.gammaBlue = NULL;
+            backup.gammaSampleCount = 0;
+        }
+    }
+    
+    if (validOut) {
+        *validOut = (backup.displayID != 0);
+    }
+    return backup;
+}
+
+static BOOL restoreGammaFromState(NSDictionary *state, size_t *restoredCountOut) {
+    NSArray *backups = state[@"backups"];
+    if (![backups isKindOfClass:[NSArray class]]) {
         return NO;
     }
     
-    if (!ExternalDisplaySkylightPrepare(displayCount) ||
-        !ExternalDisplayMirroringPrepare(displayCount) ||
-        !ExternalDisplayGammaPrepare(displayCount)) {
-        ExternalDisplaySkylightClearBackups();
-        ExternalDisplayMirroringClearBackups();
-        ExternalDisplayGammaClearBackups();
-        return NO;
+    size_t restored = 0;
+    for (NSDictionary *entry in backups) {
+        if (![entry isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+        
+        BOOL valid = NO;
+        DisplayBackup backup = gammaBackupFromState(entry, &valid);
+        if (!valid) {
+            continue;
+        }
+        
+        restoreDisplayFromBackup(&backup);
+        restored++;
+        
+        free(backup.gammaRed);
+        free(backup.gammaGreen);
+        free(backup.gammaBlue);
     }
     
-    BOOL anyDisabled = NO;
-    
-    for (CGDisplayCount i = 0; i < displayCount; i++) {
-        CGDirectDisplayID displayID = displays[i];
-        if (CGDisplayIsBuiltin(displayID)) {
-            continue;
-        }
-        
-        if (ExternalDisplaySkylightDisableDisplay(displayID)) {
-            anyDisabled = YES;
-            continue;
-        }
-        
-        if (ExternalDisplayMirroringDisableDisplay(displayID)) {
-            anyDisabled = YES;
-            continue;
-        }
-        
-        if (ExternalDisplayGammaDisableDisplay(displayID)) {
-            anyDisabled = YES;
-        }
+    if (restoredCountOut) {
+        *restoredCountOut = restored;
     }
     
-    ExternalDisplaySkylightFinalize();
-    ExternalDisplayMirroringFinalize();
-    ExternalDisplayGammaFinalize();
-    
-    externalDisplaysDisabled = anyDisabled;
+    clearBackups();
     return YES;
 }
 
-BOOL ExternalDisplaysRestore(void) {
-    if (!externalDisplaysDisabled &&
-        !ExternalDisplaySkylightHasBackups() &&
-        !ExternalDisplayMirroringHasBackups() &&
-        !ExternalDisplayGammaHasBackups()) {
-        return YES;
-    }
-    
-    ExternalDisplaySkylightRestoreAll();
-    ExternalDisplayMirroringRestoreAll();
-    ExternalDisplayGammaRestoreAll();
-    externalDisplaysDisabled = NO;
-    return YES;
-}
-
-BOOL ExternalDisplaysAreDisabled(void) {
-    return externalDisplaysDisabled;
+const ExternalDisplayBackend *ExternalDisplayBackendGamma(void) {
+    static const ExternalDisplayBackend backend = {
+        .name = "gamma",
+        .prepare = ExternalDisplayGammaPrepare,
+        .finalize = ExternalDisplayGammaFinalize,
+        .clearBackups = ExternalDisplayGammaClearBackups,
+        .disableDisplay = ExternalDisplayGammaDisableDisplay,
+        .restoreAll = ExternalDisplayGammaRestoreAll,
+        .hasBackups = ExternalDisplayGammaHasBackups,
+        .copyState = copyGammaState,
+        .restoreFromState = restoreGammaFromState
+    };
+    return &backend;
 }

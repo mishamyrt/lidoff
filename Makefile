@@ -19,6 +19,11 @@ SRC_DIR = src
 BUILD_DIR = build
 SOURCES = \
 	$(SRC_DIR)/main.m \
+	$(SRC_DIR)/launch_agent.m \
+	$(SRC_DIR)/logging.m \
+	$(SRC_DIR)/monitor.m \
+	$(SRC_DIR)/recovery_state.m \
+	$(SRC_DIR)/external_display_manager.m \
 	$(SRC_DIR)/lid_sensor.m \
 	$(SRC_DIR)/brightness.m \
 	$(SRC_DIR)/caffeinate.m \
@@ -26,9 +31,14 @@ SOURCES = \
 	$(SRC_DIR)/external_display_mirroring.m \
 	$(SRC_DIR)/external_display_skylight.m
 SOURCE_HEADERS = \
+	$(SRC_DIR)/launch_agent.h \
+	$(SRC_DIR)/logging.h \
+	$(SRC_DIR)/monitor.h \
+	$(SRC_DIR)/recovery_state.h \
 	$(SRC_DIR)/lid_sensor.h \
 	$(SRC_DIR)/brightness.h \
 	$(SRC_DIR)/caffeinate.h \
+	$(SRC_DIR)/external_display_backend.h \
 	$(SRC_DIR)/external_display.h
 TARGET = $(BUILD_DIR)/lidoff
 

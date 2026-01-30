@@ -9,30 +9,24 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 
-BOOL ExternalDisplaysDisable(void);
-BOOL ExternalDisplaysRestore(void);
+typedef struct {
+    BOOL ok;
+    BOOL alreadyDisabled;
+    size_t totalExternal;
+    size_t disabled;
+    size_t failed;
+} ExternalDisplayDisableResult;
+
+typedef struct {
+    BOOL ok;
+    BOOL hadBackups;
+    size_t restored;
+} ExternalDisplayRestoreResult;
+
+ExternalDisplayDisableResult ExternalDisplaysDisable(void);
+ExternalDisplayRestoreResult ExternalDisplaysRestore(void);
+ExternalDisplayRestoreResult ExternalDisplaysRestoreFromState(NSDictionary *state);
+NSDictionary *ExternalDisplaysCopyState(void);
 BOOL ExternalDisplaysAreDisabled(void);
-
-// Internal helpers shared across external display methods.
-BOOL ExternalDisplaySkylightPrepare(size_t displayCount);
-void ExternalDisplaySkylightFinalize(void);
-void ExternalDisplaySkylightClearBackups(void);
-BOOL ExternalDisplaySkylightDisableDisplay(CGDirectDisplayID displayID);
-void ExternalDisplaySkylightRestoreAll(void);
-BOOL ExternalDisplaySkylightHasBackups(void);
-
-BOOL ExternalDisplayMirroringPrepare(size_t displayCount);
-void ExternalDisplayMirroringFinalize(void);
-void ExternalDisplayMirroringClearBackups(void);
-BOOL ExternalDisplayMirroringDisableDisplay(CGDirectDisplayID displayID);
-void ExternalDisplayMirroringRestoreAll(void);
-BOOL ExternalDisplayMirroringHasBackups(void);
-
-BOOL ExternalDisplayGammaPrepare(size_t displayCount);
-void ExternalDisplayGammaFinalize(void);
-void ExternalDisplayGammaClearBackups(void);
-BOOL ExternalDisplayGammaDisableDisplay(CGDirectDisplayID displayID);
-void ExternalDisplayGammaRestoreAll(void);
-BOOL ExternalDisplayGammaHasBackups(void);
 
 #endif /* EXTERNAL_DISPLAY_H */

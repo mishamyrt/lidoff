@@ -3,7 +3,7 @@
 //  lidoff - external display control via dummy mirroring
 //
 
-#import "external_display.h"
+#import "external_display_backend.h"
 #import <dlfcn.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -492,4 +492,100 @@ void ExternalDisplayMirroringRestoreAll(void) {
         monitorPanelRestoreDisplay(&mirrorBackups[i]);
     }
     clearMirrorBackups();
+}
+
+static NSDictionary *copyMirroringState(void) {
+    if (!mirrorBackups || mirrorBackupCount == 0) {
+        return nil;
+    }
+    
+    NSMutableArray *backups = [NSMutableArray arrayWithCapacity:mirrorBackupCount];
+    for (size_t i = 0; i < mirrorBackupCount; i++) {
+        const MirrorBackup *backup = &mirrorBackups[i];
+        NSMutableArray *mirrorSetIDs = [NSMutableArray arrayWithCapacity:backup->mirrorSetCount];
+        for (size_t j = 0; j < backup->mirrorSetCount; j++) {
+            [mirrorSetIDs addObject:@(backup->mirrorSetIDs[j])];
+        }
+        [backups addObject:@{
+            @"displayID": @(backup->displayID),
+            @"mirrorSetIDs": mirrorSetIDs
+        }];
+    }
+    
+    return @{@"backups": backups};
+}
+
+static MirrorBackup mirrorBackupFromState(NSDictionary *entry) {
+    MirrorBackup backup = {0};
+    NSNumber *displayIDValue = entry[@"displayID"];
+    if (![displayIDValue isKindOfClass:[NSNumber class]]) {
+        return backup;
+    }
+    
+    backup.displayID = (CGDirectDisplayID)displayIDValue.unsignedIntValue;
+    NSArray *mirrorSetIDs = entry[@"mirrorSetIDs"];
+    if (![mirrorSetIDs isKindOfClass:[NSArray class]] || mirrorSetIDs.count == 0) {
+        return backup;
+    }
+    
+    backup.mirrorSetCount = mirrorSetIDs.count;
+    backup.mirrorSetIDs = calloc(backup.mirrorSetCount, sizeof(uint32_t));
+    if (!backup.mirrorSetIDs) {
+        backup.mirrorSetCount = 0;
+        return backup;
+    }
+    
+    for (NSUInteger i = 0; i < mirrorSetIDs.count; i++) {
+        NSNumber *value = mirrorSetIDs[i];
+        backup.mirrorSetIDs[i] = (uint32_t)value.unsignedIntValue;
+    }
+    
+    return backup;
+}
+
+static BOOL restoreMirroringFromState(NSDictionary *state, size_t *restoredCountOut) {
+    NSArray *backups = state[@"backups"];
+    if (![backups isKindOfClass:[NSArray class]]) {
+        return NO;
+    }
+    
+    size_t restored = 0;
+    for (NSDictionary *entry in backups) {
+        if (![entry isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+        
+        MirrorBackup backup = mirrorBackupFromState(entry);
+        if (backup.displayID == 0) {
+            resetMirrorBackup(&backup);
+            continue;
+        }
+        
+        if (monitorPanelRestoreDisplay(&backup)) {
+            restored++;
+        }
+        resetMirrorBackup(&backup);
+    }
+    
+    if (restoredCountOut) {
+        *restoredCountOut = restored;
+    }
+    
+    clearMirrorBackups();
+    return YES;
+}
+
+const ExternalDisplayBackend *ExternalDisplayBackendMirroring(void) {
+    static const ExternalDisplayBackend backend = {
+        .name = "mirroring",
+        .prepare = ExternalDisplayMirroringPrepare,
+        .finalize = ExternalDisplayMirroringFinalize,
+        .clearBackups = ExternalDisplayMirroringClearBackups,
+        .disableDisplay = ExternalDisplayMirroringDisableDisplay,
+        .restoreAll = ExternalDisplayMirroringRestoreAll,
+        .hasBackups = ExternalDisplayMirroringHasBackups,
+        .copyState = copyMirroringState,
+        .restoreFromState = restoreMirroringFromState
+    };
+    return &backend;
 }

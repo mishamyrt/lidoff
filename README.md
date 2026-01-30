@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="./docs/logo.svg" alt="lidoff logo" height="130">
+    <img src="./docs/logo.svg" alt="lidoff logo" height="141">
 </p>
 
 [![](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg)](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml)

@@ -1,5 +1,5 @@
 # lidoff - MacBook lid angle brightness daemon
-VERSION = 0.3.1
+VERSION = 0.3.2
 
 # Compilation variables
 CC = clang

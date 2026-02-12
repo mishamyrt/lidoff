@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2](https://github.com/mishamyrt/lidoff/compare/v0.3.1..v0.3.2) - 2026-02-12
+
+### 🐛 Bug Fixes
+
+- Correctly enable external displays after full lid close
+
+### 🚜 Refactor
+
+- Split focused modules
+
+### 📚 Documentation
+
+- Use rounded font
+
 ## [0.3.1](https://github.com/mishamyrt/lidoff/compare/v0.3.0..v0.3.1) - 2026-01-29
 
 ### 🚀 Features

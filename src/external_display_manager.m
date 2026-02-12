@@ -26,9 +26,11 @@ static void ensureBackendsInitialized(void) {
     if (backendsInitialized) {
         return;
     }
-    kBackends[0] = ExternalDisplayBackendSkylight();
-    kBackends[1] = ExternalDisplayBackendMirroring();
+    // Full blackout path first; gamma remains last-resort fallback.
+    kBackends[0] = ExternalDisplayBackendMirroring();
+    kBackends[1] = ExternalDisplayBackendSkylight();
     kBackends[2] = ExternalDisplayBackendGamma();
+    LogInfo(@"external display backends: mirroring -> skylight -> gamma");
     backendsInitialized = YES;
 }
 
@@ -69,30 +71,6 @@ static void finalizeAllBackends(void) {
             backend->finalize();
         }
     }
-}
-
-static size_t countDisplaysInState(NSDictionary *state) {
-    if (!state) {
-        return 0;
-    }
-    
-    size_t count = 0;
-    for (NSString *key in state) {
-        NSDictionary *backendState = state[key];
-        if (![backendState isKindOfClass:[NSDictionary class]]) {
-            continue;
-        }
-        NSArray *backups = backendState[@"backups"];
-        if ([backups isKindOfClass:[NSArray class]]) {
-            count += backups.count;
-            continue;
-        }
-        NSArray *displayIDs = backendState[@"displayIDs"];
-        if ([displayIDs isKindOfClass:[NSArray class]]) {
-            count += displayIDs.count;
-        }
-    }
-    return count;
 }
 
 ExternalDisplayDisableResult ExternalDisplaysDisable(void) {
@@ -175,21 +153,32 @@ ExternalDisplayRestoreResult ExternalDisplaysRestore(void) {
     }
     result.hadBackups = hasBackups;
     
-    NSDictionary *state = ExternalDisplaysCopyState();
-    result.restored = countDisplaysInState(state);
-    
     if (!hasBackups) {
+        externalDisplaysDisabled = NO;
         return result;
     }
     
     for (size_t i = 0; i < backendCount(); i++) {
         const ExternalDisplayBackend *backend = backendAtIndex(i);
         if (backend && backend->restoreAll) {
-            backend->restoreAll();
+            result.restored += backend->restoreAll();
         }
     }
-    
-    externalDisplaysDisabled = NO;
+
+    BOOL remainingBackups = NO;
+    for (size_t i = 0; i < backendCount(); i++) {
+        const ExternalDisplayBackend *backend = backendAtIndex(i);
+        if (backend && backend->hasBackups && backend->hasBackups()) {
+            remainingBackups = YES;
+            break;
+        }
+    }
+
+    externalDisplaysDisabled = remainingBackups;
+    if (remainingBackups) {
+        result.ok = NO;
+    }
+
     return result;
 }
 

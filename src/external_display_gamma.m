@@ -35,6 +35,19 @@ static DisplayBackup *displayBackups = NULL;
 static size_t displayBackupCount = 0;
 static size_t displayBackupCapacity = 0;
 
+static void resetBackup(DisplayBackup *backup) {
+    if (!backup) {
+        return;
+    }
+    free(backup->gammaRed);
+    free(backup->gammaGreen);
+    free(backup->gammaBlue);
+    backup->gammaRed = NULL;
+    backup->gammaGreen = NULL;
+    backup->gammaBlue = NULL;
+    backup->gammaSampleCount = 0;
+}
+
 static void clearBackups(void) {
     if (!displayBackups) {
         displayBackupCount = 0;
@@ -43,9 +56,7 @@ static void clearBackups(void) {
     }
     
     for (size_t i = 0; i < displayBackupCount; i++) {
-        free(displayBackups[i].gammaRed);
-        free(displayBackups[i].gammaGreen);
-        free(displayBackups[i].gammaBlue);
+        resetBackup(&displayBackups[i]);
     }
     
     free(displayBackups);
@@ -204,9 +215,13 @@ static BOOL backupAndZeroGamma(CGDirectDisplayID displayID, DisplayBackup *backu
     return YES;
 }
 
-static void restoreDisplayFromBackup(const DisplayBackup *backup) {
+static BOOL restoreDisplayFromBackup(const DisplayBackup *backup) {
     if (!backup) {
-        return;
+        return NO;
+    }
+    
+    if (!CGDisplayIsOnline(backup->displayID)) {
+        return NO;
     }
     
     if (backup->gammaSampleCount > 0 &&
@@ -224,7 +239,7 @@ static void restoreDisplayFromBackup(const DisplayBackup *backup) {
     
     io_service_t framebuffer = CGDisplayIOServicePort(backup->displayID);
     if (framebuffer == MACH_PORT_NULL) {
-        return;
+        return YES;
     }
     if (backup->hasBrightness) {
         ddcSetVCP(framebuffer, 0x10, backup->brightness);
@@ -232,6 +247,8 @@ static void restoreDisplayFromBackup(const DisplayBackup *backup) {
     if (backup->hasContrast) {
         ddcSetVCP(framebuffer, 0x12, backup->contrast);
     }
+    
+    return YES;
 }
 
 BOOL ExternalDisplayGammaDisableDisplay(CGDirectDisplayID displayID) {
@@ -276,12 +293,29 @@ BOOL ExternalDisplayGammaDisableDisplay(CGDirectDisplayID displayID) {
     return YES;
 }
 
-void ExternalDisplayGammaRestoreAll(void) {
-    for (size_t i = 0; i < displayBackupCount; i++) {
-        restoreDisplayFromBackup(&displayBackups[i]);
+size_t ExternalDisplayGammaRestoreAll(void) {
+    if (!displayBackups || displayBackupCount == 0) {
+        return 0;
     }
-    
-    clearBackups();
+
+    size_t restored = 0;
+    size_t remaining = 0;
+    for (size_t i = 0; i < displayBackupCount; i++) {
+        DisplayBackup backup = displayBackups[i];
+        if (restoreDisplayFromBackup(&backup)) {
+            restored++;
+            resetBackup(&backup);
+            continue;
+        }
+        displayBackups[remaining++] = backup;
+    }
+
+    displayBackupCount = remaining;
+    if (displayBackupCount == 0) {
+        clearBackups();
+    }
+
+    return restored;
 }
 
 static NSDictionary *copyGammaState(void) {
@@ -405,12 +439,11 @@ static BOOL restoreGammaFromState(NSDictionary *state, size_t *restoredCountOut)
             continue;
         }
         
-        restoreDisplayFromBackup(&backup);
-        restored++;
+        if (restoreDisplayFromBackup(&backup)) {
+            restored++;
+        }
         
-        free(backup.gammaRed);
-        free(backup.gammaGreen);
-        free(backup.gammaBlue);
+        resetBackup(&backup);
     }
     
     if (restoredCountOut) {

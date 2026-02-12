@@ -487,11 +487,31 @@ BOOL ExternalDisplayMirroringDisableDisplay(CGDirectDisplayID displayID) {
     return YES;
 }
 
-void ExternalDisplayMirroringRestoreAll(void) {
-    for (size_t i = 0; i < mirrorBackupCount; i++) {
-        monitorPanelRestoreDisplay(&mirrorBackups[i]);
+size_t ExternalDisplayMirroringRestoreAll(void) {
+    if (!mirrorBackups || mirrorBackupCount == 0) {
+        return 0;
     }
-    clearMirrorBackups();
+
+    size_t restored = 0;
+    size_t remaining = 0;
+
+    for (size_t i = 0; i < mirrorBackupCount; i++) {
+        MirrorBackup backup = mirrorBackups[i];
+        if (monitorPanelRestoreDisplay(&backup)) {
+            restored++;
+            resetMirrorBackup(&backup);
+            continue;
+        }
+
+        mirrorBackups[remaining++] = backup;
+    }
+
+    mirrorBackupCount = remaining;
+    if (mirrorBackupCount == 0) {
+        clearMirrorBackups();
+    }
+
+    return restored;
 }
 
 static NSDictionary *copyMirroringState(void) {

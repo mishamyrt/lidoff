@@ -99,7 +99,7 @@ static BOOL skylightSetDisplayEnabled(CGDirectDisplayID displayID, BOOL enabled)
         return NO;
     }
     
-    err = CGCompleteDisplayConfiguration(config, kCGConfigurePermanently);
+    err = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
     if (err != kCGErrorSuccess) {
         CGCancelDisplayConfiguration(config);
         return NO;
@@ -122,11 +122,29 @@ BOOL ExternalDisplaySkylightDisableDisplay(CGDirectDisplayID displayID) {
     return YES;
 }
 
-void ExternalDisplaySkylightRestoreAll(void) {
-    for (size_t i = 0; i < skylightBackupCount; i++) {
-        skylightSetDisplayEnabled(skylightBackups[i], YES);
+size_t ExternalDisplaySkylightRestoreAll(void) {
+    if (!skylightBackups || skylightBackupCount == 0) {
+        return 0;
     }
-    clearSkylightBackups();
+
+    size_t restored = 0;
+    size_t remaining = 0;
+    for (size_t i = 0; i < skylightBackupCount; i++) {
+        CGDirectDisplayID displayID = skylightBackups[i];
+        if (skylightSetDisplayEnabled(displayID, YES)) {
+            restored++;
+            continue;
+        }
+
+        skylightBackups[remaining++] = displayID;
+    }
+
+    skylightBackupCount = remaining;
+    if (skylightBackupCount == 0) {
+        clearSkylightBackups();
+    }
+
+    return restored;
 }
 
 static NSDictionary *copySkylightState(void) {

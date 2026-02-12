@@ -10,7 +10,7 @@ typedef struct {
     void (*finalize)(void);
     void (*clearBackups)(void);
     BOOL (*disableDisplay)(CGDirectDisplayID displayID);
-    void (*restoreAll)(void);
+    size_t (*restoreAll)(void);
     BOOL (*hasBackups)(void);
     NSDictionary *(*copyState)(void);
     BOOL (*restoreFromState)(NSDictionary *state, size_t *restoredCount);

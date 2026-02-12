@@ -99,16 +99,6 @@ static void recoverStateIfNeeded(void) {
     
     LogInfo(@"recovery state detected, attempting restore");
     
-    if (state.pendingBrightnessRestore && state.savedBrightness >= 0.0f) {
-        if (BrightnessSet(state.savedBrightness)) {
-            LogInfo(@"restored brightness to %0.2f", state.savedBrightness);
-            state.pendingBrightnessRestore = NO;
-            state.savedBrightness = -1.0f;
-        } else {
-            LogError(@"failed to restore brightness during recovery");
-        }
-    }
-    
     if (state.pendingExternalRestore) {
         ExternalDisplayRestoreResult result = {0};
         if (externalState) {
@@ -125,6 +115,16 @@ static void recoverStateIfNeeded(void) {
             state.pendingExternalRestore = NO;
         } else {
             LogError(@"failed to restore external displays during recovery");
+        }
+    }
+    
+    if (state.pendingBrightnessRestore && state.savedBrightness >= 0.0f) {
+        if (BrightnessSet(state.savedBrightness)) {
+            LogInfo(@"restored brightness to %0.2f", state.savedBrightness);
+            state.pendingBrightnessRestore = NO;
+            state.savedBrightness = -1.0f;
+        } else {
+            LogError(@"failed to restore brightness during recovery");
         }
     }
     
@@ -159,6 +159,21 @@ static BOOL restoreBrightnessLocked(BOOL logRestore) {
     return restored;
 }
 
+static void prepareBrightnessForSleepLocked(BOOL logRestore) {
+    if (monitorState.brightnessLowered && monitorState.savedBrightness >= 0.0f) {
+        if (logRestore) {
+            LogInfo(@"preparing sleep brightness to %0.2f", monitorState.savedBrightness);
+        }
+        if (!BrightnessSet(monitorState.savedBrightness) && logRestore) {
+            LogError(@"failed to prepare brightness before sleep");
+        }
+    }
+    
+    if (!CaffeinateStop()) {
+        LogError(@"failed to stop caffeinate session");
+    }
+}
+
 static void logDisableResult(ExternalDisplayDisableResult result) {
     if (!result.ok) {
         LogError(@"external display disable failed");
@@ -172,12 +187,32 @@ static void logDisableResult(ExternalDisplayDisableResult result) {
     }
 }
 
+static void logRestoreResult(ExternalDisplayRestoreResult result) {
+    if (!result.hadBackups) {
+        return;
+    }
+    
+    if (result.ok) {
+        if (result.restored > 0) {
+            LogInfo(@"restored %zu external displays", result.restored);
+        } else {
+            LogInfo(@"external display restore requested with no restored targets");
+        }
+        return;
+    }
+    
+    LogError(@"external display restore incomplete (restored %zu)", result.restored);
+}
+
 static void handleFullyClosedLocked(NSTimeInterval now) {
     monitorState.lastFullCloseAt = now;
     monitorState.belowThresholdStreak = 0;
-    
-    restoreBrightnessLocked(YES);
-    ExternalDisplaysRestore();
+
+    // Restore internal brightness before sleep so macOS does not persist
+    // and re-apply the temporary 0.0 level after wake. Keep pending restore
+    // state for open-handler because external reconfiguration may re-darken it.
+    prepareBrightnessForSleepLocked(YES);
+
     persistRecoveryStateLocked();
 }
 
@@ -214,9 +249,6 @@ static void handlePartiallyClosedLocked(int angle, NSTimeInterval now) {
     }
     
     if (monitorState.belowThresholdStreak >= MonitorPartialStabilitySamples) {
-        ExternalDisplayDisableResult disableResult = ExternalDisplaysDisable();
-        logDisableResult(disableResult);
-        
         float currentBrightness = BrightnessGet();
         if (currentBrightness < 0.0f) {
             LogError(@"failed to read brightness");
@@ -231,6 +263,9 @@ static void handlePartiallyClosedLocked(int angle, NSTimeInterval now) {
         monitorState.savedBrightness = currentBrightness;
         monitorState.brightnessLowered = YES;
         LogInfo(@"dimming display to 0.0f");
+
+        ExternalDisplayDisableResult disableResult = ExternalDisplaysDisable();
+        logDisableResult(disableResult);
         
         if (!CaffeinateStart()) {
             LogError(@"failed to start caffeinate session");
@@ -242,8 +277,9 @@ static void handlePartiallyClosedLocked(int angle, NSTimeInterval now) {
 
 static void handleOpenLocked(void) {
     monitorState.belowThresholdStreak = 0;
+    ExternalDisplayRestoreResult restoreResult = ExternalDisplaysRestore();
+    logRestoreResult(restoreResult);
     restoreBrightnessLocked(YES);
-    ExternalDisplaysRestore();
     persistRecoveryStateLocked();
 }
 
@@ -263,8 +299,8 @@ static void powerCallback(void *refCon, io_service_t service, natural_t messageT
                 monitorState.lastWakeAt = 0.0;
                 monitorState.lastAngle = -1;
                 monitorState.belowThresholdStreak = 0;
-                restoreBrightnessLocked(NO);
-                ExternalDisplaysRestore();
+                // Same rationale as in fully-closed handler.
+                prepareBrightnessForSleepLocked(NO);
                 persistRecoveryStateLocked();
             }
             IOAllowPowerChange(powerRootPort, (long)messageArgument);
@@ -384,8 +420,9 @@ void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFla
     }
     
     @synchronized(stateLock) {
+        ExternalDisplayRestoreResult restoreResult = ExternalDisplaysRestore();
+        logRestoreResult(restoreResult);
         restoreBrightnessLocked(NO);
-        ExternalDisplaysRestore();
         persistRecoveryStateLocked();
     }
 }

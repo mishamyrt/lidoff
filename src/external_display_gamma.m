@@ -436,6 +436,7 @@ static BOOL restoreGammaFromState(NSDictionary *state, size_t *restoredCountOut)
         BOOL valid = NO;
         DisplayBackup backup = gammaBackupFromState(entry, &valid);
         if (!valid) {
+            resetBackup(&backup);
             continue;
         }
         

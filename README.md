@@ -18,6 +18,13 @@ When I discovered the ability to read the angle of the MacBook, I thought that t
 
 ## Installation
 
+**Homebrew:**
+
+```bash
+brew install mishamyrt/tap/lidoff
+lidoff --enable
+```
+
 **Quick install:**
 
 ```bash

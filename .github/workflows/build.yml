@@ -13,13 +13,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install LLVM
+        run: brew install llvm
+
+      - name: Add LLVM to PATH
+        run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Quality checks
+        run: make check
+
       - name: Build
         run: make
 
       - name: Test binary
         run: ./build/lidoff --help
 
+      - name: Upload scan-build report
+        if: failure() && hashFiles('build/scan-build/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-build-report
+          path: build/scan-build
+
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: lidoff

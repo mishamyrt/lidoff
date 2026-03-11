@@ -35,6 +35,14 @@ make install
 lidoff --enable
 ```
 
+**Development tools:**
+
+```bash
+brew install llvm
+```
+
+Add Homebrew LLVM to your shell `PATH` if you want to invoke `clang-tidy` and `scan-build` directly. The `Makefile` also auto-detects `$(brew --prefix llvm)/bin` for local runs and CI.
+
 ## Usage
 
 ```
@@ -70,3 +78,13 @@ This prevents the issue where fully closing the lid would leave the display at z
 ## Requirements
 
 - MacBook Air or MacBook Pro with Apple Silicon (M2, M3, M4)
+
+## Development
+
+The project ships with Objective-C linting and static analysis targets:
+
+- `make lint` — runs `clang-tidy` with Objective-C checks from `.clang-tidy`
+- `make analyze` — runs Clang Static Analyzer through `scan-build` and writes the HTML report to `build/scan-build`
+- `make check` — runs `make lint` and `make analyze`; this is required in CI for every pull request
+
+The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.

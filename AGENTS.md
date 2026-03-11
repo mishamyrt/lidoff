@@ -13,3 +13,11 @@ make clean && make
 ```
 
 If the build fails, you need to fix the errors before messaging the user.
+
+After making code changes, you must also run the project quality checks:
+
+```bash
+make check
+```
+
+If `make check` fails, you need to fix the issues before messaging the user.

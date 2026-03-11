@@ -1,0 +1,4 @@
+Checks: '-*,objc-*'
+WarningsAsErrors: 'objc-*'
+HeaderFilterRegex: 'src/.*'
+FormatStyle: none

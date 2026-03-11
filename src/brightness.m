@@ -30,6 +30,13 @@ static CGDirectDisplayID brightnessTargetDisplay(void) {
     return cachedBuiltinDisplayID;
 }
 
+static CGDirectDisplayID resolveBuiltinDisplay(void) {
+    CGDirectDisplayID d = brightnessTargetDisplay();
+    if (d != kCGNullDirectDisplay) return d;
+    cachedBuiltinDisplayID = kCGNullDirectDisplay;
+    return brightnessTargetDisplay();
+}
+
 static void loadDisplayServices(void) {
     if (displayServicesLoaded) return;
     displayServicesLoaded = YES;
@@ -50,16 +57,8 @@ float BrightnessGet(void) {
     if (!displayServicesAvailable) return -1.0f;
 
     float brightness = 0.0f;
-    CGDirectDisplayID targetDisplay = brightnessTargetDisplay();
-    if (targetDisplay != kCGNullDirectDisplay &&
-        DSGetBrightness(targetDisplay, &brightness) == 0) {
-        return brightness;
-    }
-
-    cachedBuiltinDisplayID = kCGNullDirectDisplay;
-    targetDisplay = brightnessTargetDisplay();
-    if (targetDisplay != kCGNullDirectDisplay &&
-        DSGetBrightness(targetDisplay, &brightness) == 0) {
+    CGDirectDisplayID display = resolveBuiltinDisplay();
+    if (display != kCGNullDirectDisplay && DSGetBrightness(display, &brightness) == 0) {
         return brightness;
     }
 
@@ -73,23 +72,11 @@ BOOL BrightnessSet(float brightness) {
     if (brightness < 0.0f) brightness = 0.0f;
     if (brightness > 1.0f) brightness = 1.0f;
 
-    CGDirectDisplayID targetDisplay = brightnessTargetDisplay();
-    if (targetDisplay != kCGNullDirectDisplay &&
-        DSSetBrightness(targetDisplay, brightness) == 0) {
-        return YES;
-    }
-
-    cachedBuiltinDisplayID = kCGNullDirectDisplay;
-    targetDisplay = brightnessTargetDisplay();
-    if (targetDisplay != kCGNullDirectDisplay &&
-        DSSetBrightness(targetDisplay, brightness) == 0) {
+    CGDirectDisplayID display = resolveBuiltinDisplay();
+    if (display != kCGNullDirectDisplay && DSSetBrightness(display, brightness) == 0) {
         return YES;
     }
 
     return NO;
 }
 
-BOOL BrightnessIsDisplayAvailable(void) {
-    loadDisplayServices();
-    return displayServicesAvailable;
-}

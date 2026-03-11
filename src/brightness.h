@@ -10,6 +10,5 @@
 
 float BrightnessGet(void);
 BOOL BrightnessSet(float brightness);
-BOOL BrightnessIsDisplayAvailable(void);
 
 #endif /* BRIGHTNESS_H */

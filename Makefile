@@ -23,13 +23,14 @@ SOURCES = \
 	$(SRC_DIR)/logging.m \
 	$(SRC_DIR)/monitor.m \
 	$(SRC_DIR)/recovery_state.m \
-	$(SRC_DIR)/external_display_manager.m \
+	$(SRC_DIR)/external_display.m \
 	$(SRC_DIR)/lid_sensor.m \
 	$(SRC_DIR)/brightness.m \
 	$(SRC_DIR)/caffeinate.m \
 	$(SRC_DIR)/external_display_gamma.m \
 	$(SRC_DIR)/external_display_mirroring.m \
-	$(SRC_DIR)/external_display_skylight.m
+	$(SRC_DIR)/external_display_skylight.m \
+	$(SRC_DIR)/power_observer.m
 SOURCE_HEADERS = \
 	$(SRC_DIR)/launch_agent.h \
 	$(SRC_DIR)/logging.h \
@@ -39,7 +40,8 @@ SOURCE_HEADERS = \
 	$(SRC_DIR)/brightness.h \
 	$(SRC_DIR)/caffeinate.h \
 	$(SRC_DIR)/external_display_backend.h \
-	$(SRC_DIR)/external_display.h
+	$(SRC_DIR)/external_display.h \
+	$(SRC_DIR)/power_observer.h
 TARGET = $(BUILD_DIR)/lidoff
 
 .PHONY: all

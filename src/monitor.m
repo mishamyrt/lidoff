@@ -5,9 +5,7 @@
 #import "caffeinate.h"
 #import "external_display.h"
 #import "recovery_state.h"
-#import <IOKit/IOKitLib.h>
-#import <IOKit/pwr_mgt/IOPMLib.h>
-#import <IOKit/IOMessage.h>
+#import "power_observer.h"
 
 // Default angle threshold where dimming begins (degrees).
 const int MonitorDefaultThreshold = 30;
@@ -50,10 +48,6 @@ static MonitorState monitorState = {
 };
 
 static NSObject *stateLock = nil;
-
-static io_connect_t powerRootPort = 0;
-static IONotificationPortRef powerNotifyPort = NULL;
-static io_object_t powerNotifier = 0;
 
 static LidState lidStateForAngle(int angle, int threshold) {
     if (angle == LID_ANGLE_ERROR) {
@@ -135,7 +129,7 @@ static void recoverStateIfNeeded(void) {
     }
 }
 
-static BOOL restoreBrightnessLocked(BOOL logRestore) {
+static BOOL restoreDisplayStateLocked(BOOL logRestore) {
     BOOL restored = YES;
     if (monitorState.brightnessLowered && monitorState.savedBrightness >= 0.0f) {
         if (logRestore) {
@@ -159,7 +153,7 @@ static BOOL restoreBrightnessLocked(BOOL logRestore) {
     return restored;
 }
 
-static void prepareBrightnessForSleepLocked(BOOL logRestore) {
+static void prepareDisplayStateForSleepLocked(BOOL logRestore) {
     if (monitorState.brightnessLowered && monitorState.savedBrightness >= 0.0f) {
         if (logRestore) {
             LogInfo(@"preparing sleep brightness to %0.2f", monitorState.savedBrightness);
@@ -211,7 +205,7 @@ static void handleFullyClosedLocked(NSTimeInterval now) {
     // Restore internal brightness before sleep so macOS does not persist
     // and re-apply the temporary 0.0 level after wake. Keep pending restore
     // state for open-handler because external reconfiguration may re-darken it.
-    prepareBrightnessForSleepLocked(YES);
+    prepareDisplayStateForSleepLocked(YES);
 
     persistRecoveryStateLocked();
 }
@@ -279,79 +273,8 @@ static void handleOpenLocked(void) {
     monitorState.belowThresholdStreak = 0;
     ExternalDisplayRestoreResult restoreResult = ExternalDisplaysRestore();
     logRestoreResult(restoreResult);
-    restoreBrightnessLocked(YES);
+    restoreDisplayStateLocked(YES);
     persistRecoveryStateLocked();
-}
-
-static void powerCallback(void *refCon, io_service_t service, natural_t messageType, void *messageArgument) {
-    (void)refCon;
-    (void)service;
-    
-    switch (messageType) {
-        case kIOMessageCanSystemSleep:
-            IOAllowPowerChange(powerRootPort, (long)messageArgument);
-            break;
-        case kIOMessageSystemWillSleep: {
-            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-            @synchronized(stateLock) {
-                monitorState.systemSleeping = YES;
-                monitorState.lastFullCloseAt = now;
-                monitorState.lastWakeAt = 0.0;
-                monitorState.lastAngle = -1;
-                monitorState.belowThresholdStreak = 0;
-                // Same rationale as in fully-closed handler.
-                prepareBrightnessForSleepLocked(NO);
-                persistRecoveryStateLocked();
-            }
-            IOAllowPowerChange(powerRootPort, (long)messageArgument);
-            break;
-        }
-        case kIOMessageSystemHasPoweredOn: {
-            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-            @synchronized(stateLock) {
-                monitorState.systemSleeping = NO;
-                monitorState.lastWakeAt = now;
-                monitorState.lastFullCloseAt = now;
-                monitorState.lastAngle = -1;
-                monitorState.belowThresholdStreak = 0;
-            }
-            break;
-        }
-        default:
-            break;
-    }
-}
-
-static void registerPowerNotifications(void) {
-    powerRootPort = IORegisterForSystemPower(
-        NULL,
-        &powerNotifyPort,
-        powerCallback,
-        &powerNotifier
-    );
-    
-    if (powerRootPort == 0 || powerNotifyPort == NULL) {
-        LogError(@"failed to register power notifications");
-        return;
-    }
-    
-    CFRunLoopAddSource(
-        CFRunLoopGetCurrent(),
-        IONotificationPortGetRunLoopSource(powerNotifyPort),
-        kCFRunLoopCommonModes
-    );
-    
-    CFRunLoopRun();
-}
-
-static void startPowerMonitor(void) {
-    NSThread *powerThread = [[NSThread alloc] initWithBlock:^{
-        @autoreleasepool {
-            registerPowerNotifications();
-        }
-    }];
-    powerThread.name = @"lidoff.power";
-    [powerThread start];
 }
 
 void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFlag) {
@@ -370,7 +293,28 @@ void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFla
         .systemSleeping = NO
     };
     recoverStateIfNeeded();
-    startPowerMonitor();
+    PowerObserverStart(^{
+        NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+        @synchronized(stateLock) {
+            monitorState.systemSleeping = YES;
+            monitorState.lastFullCloseAt = now;
+            monitorState.lastWakeAt = 0.0;
+            monitorState.lastAngle = -1;
+            monitorState.belowThresholdStreak = 0;
+            // Same rationale as in fully-closed handler.
+            prepareDisplayStateForSleepLocked(NO);
+            persistRecoveryStateLocked();
+        }
+    }, ^{
+        NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+        @synchronized(stateLock) {
+            monitorState.systemSleeping = NO;
+            monitorState.lastWakeAt = now;
+            monitorState.lastFullCloseAt = now;
+            monitorState.lastAngle = -1;
+            monitorState.belowThresholdStreak = 0;
+        }
+    });
     
     NSTimeInterval interval = config->intervalMs / 1000.0;
     
@@ -384,12 +328,9 @@ void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFla
             
             LogDebug(@"angle %d°", angle);
             NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-            BOOL skipThisCycle = NO;
-            
+
             @synchronized(stateLock) {
-                if (monitorState.systemSleeping) {
-                    skipThisCycle = YES;
-                } else {
+                if (!monitorState.systemSleeping) {
                     LidState state = lidStateForAngle(angle, config->threshold);
                     switch (state) {
                         case LidStateFullyClosed:
@@ -405,24 +346,18 @@ void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFla
                         default:
                             break;
                     }
-                }
-                
-                if (!skipThisCycle) {
                     monitorState.lastAngle = angle;
                 }
             }
-            
+
             [NSThread sleepForTimeInterval:interval];
-            if (skipThisCycle) {
-                continue;
-            }
         }
     }
     
     @synchronized(stateLock) {
         ExternalDisplayRestoreResult restoreResult = ExternalDisplaysRestore();
         logRestoreResult(restoreResult);
-        restoreBrightnessLocked(NO);
+        restoreDisplayStateLocked(NO);
         persistRecoveryStateLocked();
     }
 }

@@ -1,3 +1,8 @@
+//
+//  recovery_state.h
+//  lidoff - crash recovery state persistence
+//
+
 #ifndef RECOVERY_STATE_H
 #define RECOVERY_STATE_H
 
@@ -9,7 +14,6 @@ typedef struct {
     BOOL pendingExternalRestore;
 } RecoveryState;
 
-NSString *RecoveryStatePath(void);
 BOOL RecoveryStateLoad(RecoveryState *stateOut, NSDictionary **externalStateOut);
 BOOL RecoveryStateSave(const RecoveryState *state, NSDictionary *externalState);
 void RecoveryStateClear(void);

@@ -9,7 +9,7 @@ static NSString *const kSavedBrightnessKey = @"savedBrightness";
 static NSString *const kPendingExternalKey = @"pendingExternalRestore";
 static NSString *const kExternalStateKey = @"externalDisplayState";
 
-NSString *RecoveryStatePath(void) {
+static NSString *RecoveryStatePath(void) {
     NSString *dir = [kRecoveryStateDirectory stringByExpandingTildeInPath];
     return [dir stringByAppendingPathComponent:kRecoveryStateFilename];
 }

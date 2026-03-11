@@ -1,3 +1,8 @@
+//
+//  logging.h
+//  lidoff - log output helpers
+//
+
 #ifndef LOGGING_H
 #define LOGGING_H
 

@@ -1,3 +1,8 @@
+//
+//  launch_agent.h
+//  lidoff - LaunchAgent install and uninstall
+//
+
 #ifndef LAUNCH_AGENT_H
 #define LAUNCH_AGENT_H
 

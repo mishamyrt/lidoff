@@ -1,3 +1,8 @@
+//
+//  external_display_backend.h
+//  lidoff - external display backend vtable interface
+//
+
 #ifndef EXTERNAL_DISPLAY_BACKEND_H
 #define EXTERNAL_DISPLAY_BACKEND_H
 

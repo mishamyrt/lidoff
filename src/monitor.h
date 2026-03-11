@@ -1,3 +1,8 @@
+//
+//  monitor.h
+//  lidoff - lid angle monitoring loop
+//
+
 #ifndef MONITOR_H
 #define MONITOR_H
 

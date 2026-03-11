@@ -2,6 +2,8 @@
 #import "external_display_backend.h"
 #import "logging.h"
 
+#define kMaxDisplayCount 32
+
 static BOOL externalDisplaysDisabled = NO;
 static BOOL backendsInitialized = NO;
 
@@ -87,9 +89,9 @@ ExternalDisplayDisableResult ExternalDisplaysDisable(void) {
         return result;
     }
     
-    CGDirectDisplayID displays[32];
+    CGDirectDisplayID displays[kMaxDisplayCount];
     CGDisplayCount displayCount = 0;
-    CGError err = CGGetOnlineDisplayList(32, displays, &displayCount);
+    CGError err = CGGetOnlineDisplayList(kMaxDisplayCount, displays, &displayCount);
     if (err != kCGErrorSuccess) {
         LogError(@"failed to enumerate displays (error %d)", err);
         result.ok = NO;

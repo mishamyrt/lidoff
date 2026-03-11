@@ -83,8 +83,9 @@ This prevents the issue where fully closing the lid would leave the display at z
 
 The project ships with Objective-C linting and static analysis targets:
 
+- `make fmt` — runs `clang-format` on `src/*.m` and `src/*.h`
 - `make lint` — runs `clang-tidy` with Objective-C checks from `.clang-tidy`
 - `make analyze` — runs Clang Static Analyzer through `scan-build` and writes the HTML report to `build/scan-build`
-- `make check` — runs `make lint` and `make analyze`; this is required in CI for every pull request
+- `make check` — runs `make fmt`, `make lint`, and `make analyze`; this is required in CI for every pull request
 
 The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.

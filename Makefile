@@ -19,12 +19,19 @@ BREW ?= $(shell command -v brew 2>/dev/null)
 LLVM_PREFIX ?= $(shell if [ -n "$(BREW)" ]; then brew --prefix llvm 2>/dev/null; fi)
 LLVM_BIN ?= $(if $(strip $(LLVM_PREFIX)),$(LLVM_PREFIX)/bin,)
 CLANG_TIDY ?= $(shell command -v clang-tidy 2>/dev/null)
+CLANG_FORMAT ?= $(shell command -v clang-format 2>/dev/null)
 SCAN_BUILD ?= $(shell command -v scan-build 2>/dev/null)
 SDK_ROOT ?= $(shell xcrun --show-sdk-path 2>/dev/null)
 
 ifeq ($(strip $(CLANG_TIDY)),)
 ifneq ($(strip $(LLVM_BIN)),)
 CLANG_TIDY := $(LLVM_BIN)/clang-tidy
+endif
+endif
+
+ifeq ($(strip $(CLANG_FORMAT)),)
+ifneq ($(strip $(LLVM_BIN)),)
+CLANG_FORMAT := $(LLVM_BIN)/clang-format
 endif
 endif
 
@@ -63,6 +70,7 @@ SOURCE_HEADERS = \
 	$(SRC_DIR)/external_display.h \
 	$(SRC_DIR)/power_observer.h
 TARGET = $(BUILD_DIR)/lidoff
+FORMAT_SOURCES = $(SOURCES) $(SOURCE_HEADERS)
 LINT_SOURCES = $(filter %.m,$(SOURCES))
 CLANG_TIDY_FLAGS = $(CFLAGS) -I$(SRC_DIR) -isysroot $(SDK_ROOT) -x objective-c
 SCAN_BUILD_DIR = $(BUILD_DIR)/scan-build
@@ -78,6 +86,14 @@ clean: ## clean build directory
 install: $(TARGET) ## install the daemon
 	rm -f "$(HOME)/.local/bin/lidoff"
 	cp $(TARGET) "$(HOME)/.local/bin/lidoff"
+
+.PHONY: fmt
+fmt: ## format Objective-C sources with clang-format
+	@if ! command -v "$(CLANG_FORMAT)" >/dev/null 2>&1; then \
+		echo "clang-format not found. Install LLVM with Homebrew: brew install llvm" >&2; \
+		exit 1; \
+	fi
+	@"$(CLANG_FORMAT)" -i -style=file $(FORMAT_SOURCES)
 
 .PHONY: lint
 lint: ## run clang-tidy for Objective-C sources
@@ -105,7 +121,8 @@ analyze: ## run Clang Static Analyzer via scan-build
 	@"$(SCAN_BUILD)" --status-bugs -o "$(SCAN_BUILD_DIR)" --use-analyzer "$$(xcrun --find clang)" $(MAKE) all
 
 .PHONY: check
-check: ## run lint and static analysis
+check: ## format code, run lint and static analysis
+	@$(MAKE) fmt
 	@$(MAKE) lint
 	@$(MAKE) analyze
 

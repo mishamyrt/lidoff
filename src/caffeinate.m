@@ -46,6 +46,3 @@ BOOL CaffeinateStop(void) {
     return NO;
 }
 
-BOOL CaffeinateIsActive(void) {
-    return caffeinateActive;
-}

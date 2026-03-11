@@ -10,6 +10,5 @@
 
 BOOL CaffeinateStart(void);
 BOOL CaffeinateStop(void);
-BOOL CaffeinateIsActive(void);
 
 #endif /* CAFFEINATE_H */

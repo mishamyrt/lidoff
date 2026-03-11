@@ -157,6 +157,3 @@ int LidSensorGetAngle(void) {
     return angle;
 }
 
-BOOL LidSensorIsAvailable(void) {
-    return (lidDevice != NULL);
-}

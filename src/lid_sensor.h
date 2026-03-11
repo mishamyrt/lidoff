@@ -19,6 +19,5 @@
 BOOL LidSensorInit(void);
 void LidSensorClose(void);
 int LidSensorGetAngle(void);
-BOOL LidSensorIsAvailable(void);
 
 #endif /* LID_SENSOR_H */

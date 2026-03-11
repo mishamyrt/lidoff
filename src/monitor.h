@@ -17,8 +17,8 @@ extern const NSTimeInterval MonitorPostCloseGraceSeconds;
 extern const NSTimeInterval MonitorPostWakeGraceSeconds;
 
 typedef struct {
-    int threshold;
-    int intervalMs;
+  int threshold;
+  int intervalMs;
 } MonitorConfig;
 
 void MonitorRun(const MonitorConfig *config, volatile sig_atomic_t *shouldRunFlag);

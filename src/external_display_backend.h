@@ -10,15 +10,15 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 typedef struct {
-    const char *name;
-    BOOL (*prepare)(size_t displayCount);
-    void (*finalize)(void);
-    void (*clearBackups)(void);
-    BOOL (*disableDisplay)(CGDirectDisplayID displayID);
-    size_t (*restoreAll)(void);
-    BOOL (*hasBackups)(void);
-    NSDictionary *(*copyState)(void);
-    BOOL (*restoreFromState)(NSDictionary *state, size_t *restoredCount);
+  const char *name;
+  BOOL (*prepare)(size_t displayCount);
+  void (*finalize)(void);
+  void (*clearBackups)(void);
+  BOOL (*disableDisplay)(CGDirectDisplayID displayID);
+  size_t (*restoreAll)(void);
+  BOOL (*hasBackups)(void);
+  NSDictionary *(*copyState)(void);
+  BOOL (*restoreFromState)(NSDictionary *state, size_t *restoredCount);
 } ExternalDisplayBackend;
 
 const ExternalDisplayBackend *ExternalDisplayBackendSkylight(void);

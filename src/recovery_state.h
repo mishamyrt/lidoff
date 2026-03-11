@@ -9,9 +9,9 @@
 #import <Foundation/Foundation.h>
 
 typedef struct {
-    BOOL pendingBrightnessRestore;
-    float savedBrightness;
-    BOOL pendingExternalRestore;
+  BOOL pendingBrightnessRestore;
+  float savedBrightness;
+  BOOL pendingExternalRestore;
 } RecoveryState;
 
 BOOL RecoveryStateLoad(RecoveryState *stateOut, NSDictionary **externalStateOut);

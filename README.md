@@ -4,7 +4,8 @@
 
 [![](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg)](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml)
 
-Daemon that turns off MacBook display brightness and enables caffeinate when the lid is partially closed.
+Rust daemon with a minimal native C shim that turns off MacBook display brightness and
+enables caffeinate when the lid is partially closed.
 
 ## What for?
 
@@ -37,6 +38,7 @@ lidoff --enable
 ```bash
 git clone https://github.com/mishamyrt/lidoff.git
 cd lidoff
+rustup toolchain install stable
 make
 make install
 lidoff --enable
@@ -46,6 +48,7 @@ lidoff --enable
 
 ```bash
 brew install llvm
+rustup component add rustfmt clippy
 ```
 
 Add Homebrew LLVM to your shell `PATH` if you want to invoke `clang-tidy` and `scan-build` directly. The `Makefile` also auto-detects `$(brew --prefix llvm)/bin` for local runs and CI.
@@ -72,10 +75,9 @@ The daemon monitors lid angle and manages display brightness with caffeinate ses
 - **Lid opened** (angle ≥ threshold): restores saved brightness, restores external display state, and ends caffeinate session
 - **Lid fully closed** (angle < 10°): restores brightness, restores external display state, and ends caffeinate session, allowing normal sleep behavior
 
-External display shutdown tries three methods in priority order:
+External display shutdown tries two methods in priority order:
 
 - **Skylight API** — disables the display at the system level
-- **MonitorPanel mirroring** — mirrors the display to a dummy/virtual target
 - **DDC/CI + gamma fallback** — sets brightness/contrast to 0 and zeros gamma
 
 Some monitors or ports may not support DDC/CI, in which case only gamma is applied.
@@ -88,11 +90,17 @@ This prevents the issue where fully closing the lid would leave the display at z
 
 ## Development
 
-The project ships with Objective-C linting and static analysis targets:
+The codebase now lives under `rust/`. Runtime orchestration is implemented in Rust, while the
+remaining macOS integration shim is kept in `rust/macos`.
 
-- `make fmt` — runs `clang-format` on `src/*.m` and `src/*.h`
-- `make lint` — runs `clang-tidy` with Objective-C checks from `.clang-tidy`
-- `make analyze` — runs Clang Static Analyzer through `scan-build` and writes the HTML report to `build/scan-build`
-- `make check` — runs `make fmt`, `make lint`, and `make analyze`; this is required in CI for every pull request
+Quality targets:
 
-The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.
+- `make` — builds the Rust daemon into `build/lidoff`
+- `make fmt` — runs `cargo fmt` and `clang-format`
+- `make lint` — runs `cargo clippy` and `clang-tidy`
+- `make test` — runs Rust unit tests
+- `make analyze` — runs Clang Static Analyzer through `scan-build` against the native C shim layer and writes the HTML report to `build/scan-build`
+- `make check` — runs `make fmt`, `make lint`, `make test`, and `make analyze`; this is required in CI for every pull request
+
+The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings
+do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.

@@ -1,20 +1,17 @@
-//
-//  brightness.m
-//  lidoff - display brightness control
-//
+#include "brightness.h"
 
-#import "brightness.h"
-#import <dlfcn.h>
-#import <CoreGraphics/CoreGraphics.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <dlfcn.h>
+#include <stdbool.h>
 
 typedef int (*DSGetBrightnessFunc)(CGDirectDisplayID, float *);
 typedef int (*DSSetBrightnessFunc)(CGDirectDisplayID, float);
 
 static DSGetBrightnessFunc DSGetBrightness = NULL;
 static DSSetBrightnessFunc DSSetBrightness = NULL;
-static BOOL displayServicesLoaded = NO;
-static BOOL displayServicesAvailable = NO;
-static CGDirectDisplayID cachedBuiltinDisplayID = kCGNullDirectDisplay;
+static bool display_services_loaded = false;
+static bool display_services_available = false;
+static CGDirectDisplayID cached_builtin_display_id = kCGNullDirectDisplay;
 
 static CGDirectDisplayID brightnessTargetDisplay(void) {
   CGDirectDisplayID displays[16];
@@ -22,40 +19,47 @@ static CGDirectDisplayID brightnessTargetDisplay(void) {
   if (CGGetOnlineDisplayList(16, displays, &count) == kCGErrorSuccess) {
     for (CGDisplayCount i = 0; i < count; i++) {
       if (CGDisplayIsBuiltin(displays[i])) {
-        cachedBuiltinDisplayID = displays[i];
-        return cachedBuiltinDisplayID;
+        cached_builtin_display_id = displays[i];
+        return cached_builtin_display_id;
       }
     }
   }
-  return cachedBuiltinDisplayID;
+
+  return cached_builtin_display_id;
 }
 
 static CGDirectDisplayID resolveBuiltinDisplay(void) {
-  CGDirectDisplayID d = brightnessTargetDisplay();
-  if (d != kCGNullDirectDisplay) return d;
-  cachedBuiltinDisplayID = kCGNullDirectDisplay;
+  CGDirectDisplayID display = brightnessTargetDisplay();
+  if (display != kCGNullDirectDisplay) {
+    return display;
+  }
+
+  cached_builtin_display_id = kCGNullDirectDisplay;
   return brightnessTargetDisplay();
 }
 
 static void loadDisplayServices(void) {
-  if (displayServicesLoaded) return;
-  displayServicesLoaded = YES;
+  if (display_services_loaded) {
+    return;
+  }
 
+  display_services_loaded = true;
   void *handle = dlopen(
       "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW);
-  if (!handle) return;
+  if (handle == NULL) {
+    return;
+  }
 
   DSGetBrightness = (DSGetBrightnessFunc)dlsym(handle, "DisplayServicesGetBrightness");
   DSSetBrightness = (DSSetBrightnessFunc)dlsym(handle, "DisplayServicesSetBrightness");
-
-  if (DSGetBrightness && DSSetBrightness) {
-    displayServicesAvailable = YES;
-  }
+  display_services_available = (DSGetBrightness != NULL && DSSetBrightness != NULL);
 }
 
 float BrightnessGet(void) {
   loadDisplayServices();
-  if (!displayServicesAvailable) return -1.0f;
+  if (!display_services_available) {
+    return -1.0f;
+  }
 
   float brightness = 0.0f;
   CGDirectDisplayID display = resolveBuiltinDisplay();
@@ -66,17 +70,23 @@ float BrightnessGet(void) {
   return -1.0f;
 }
 
-BOOL BrightnessSet(float brightness) {
+uint8_t BrightnessSet(float brightness) {
   loadDisplayServices();
-  if (!displayServicesAvailable) return NO;
+  if (!display_services_available) {
+    return 0;
+  }
 
-  if (brightness < 0.0f) brightness = 0.0f;
-  if (brightness > 1.0f) brightness = 1.0f;
+  if (brightness < 0.0f) {
+    brightness = 0.0f;
+  }
+  if (brightness > 1.0f) {
+    brightness = 1.0f;
+  }
 
   CGDirectDisplayID display = resolveBuiltinDisplay();
   if (display != kCGNullDirectDisplay && DSSetBrightness(display, brightness) == 0) {
-    return YES;
+    return 1;
   }
 
-  return NO;
+  return 0;
 }

@@ -1,7 +1,0 @@
-BasedOnStyle: Google
-ColumnLimit: 100
-IndentWidth: 2
-UseTab: Never
-PointerAlignment: Right
-SortIncludes:
-  Enabled: false

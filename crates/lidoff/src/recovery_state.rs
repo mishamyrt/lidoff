@@ -2,9 +2,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use lidoff_display::ExternalDisplayState;
 use serde::{Deserialize, Serialize};
 
-use crate::external_display::ExternalDisplayState;
 use crate::logging;
 
 const RECOVERY_STATE_VERSION: u8 = 1;
@@ -158,7 +158,7 @@ mod tests {
         RecoveryStateData, cleanup_legacy_recovery_file_at, decode_state, encode_state,
         legacy_recovery_state_path, load_at_home, save_at_home,
     };
-    use crate::external_display::{ExternalDisplayState, GammaBackup};
+    use lidoff_display::{ExternalDisplayState, GammaBackup};
 
     struct TestDir {
         path: PathBuf,

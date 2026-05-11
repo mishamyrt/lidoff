@@ -44,15 +44,19 @@ static void loadDisplayServices(void) {
   }
 
   display_services_loaded = true;
-  void *handle = dlopen(
-      "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW);
+  void *handle = dlopen("/System/Library/PrivateFrameworks/"
+                        "DisplayServices.framework/DisplayServices",
+                        RTLD_NOW);
   if (handle == NULL) {
     return;
   }
 
-  DSGetBrightness = (DSGetBrightnessFunc)dlsym(handle, "DisplayServicesGetBrightness");
-  DSSetBrightness = (DSSetBrightnessFunc)dlsym(handle, "DisplayServicesSetBrightness");
-  display_services_available = (DSGetBrightness != NULL && DSSetBrightness != NULL);
+  DSGetBrightness =
+      (DSGetBrightnessFunc)dlsym(handle, "DisplayServicesGetBrightness");
+  DSSetBrightness =
+      (DSSetBrightnessFunc)dlsym(handle, "DisplayServicesSetBrightness");
+  display_services_available =
+      (DSGetBrightness != NULL && DSSetBrightness != NULL);
 }
 
 float BrightnessGet(void) {
@@ -63,7 +67,8 @@ float BrightnessGet(void) {
 
   float brightness = 0.0f;
   CGDirectDisplayID display = resolveBuiltinDisplay();
-  if (display != kCGNullDirectDisplay && DSGetBrightness(display, &brightness) == 0) {
+  if (display != kCGNullDirectDisplay &&
+      DSGetBrightness(display, &brightness) == 0) {
     return brightness;
   }
 
@@ -84,7 +89,8 @@ uint8_t BrightnessSet(float brightness) {
   }
 
   CGDirectDisplayID display = resolveBuiltinDisplay();
-  if (display != kCGNullDirectDisplay && DSSetBrightness(display, brightness) == 0) {
+  if (display != kCGNullDirectDisplay &&
+      DSSetBrightness(display, brightness) == 0) {
     return 1;
   }
 

@@ -96,7 +96,8 @@ static uint8_t ddcChecksum(const uint8_t *payload, size_t length) {
   return checksum;
 }
 
-static IOReturn sendI2CRequest(io_service_t framebuffer, IOI2CRequest *request) {
+static IOReturn sendI2CRequest(io_service_t framebuffer,
+                               IOI2CRequest *request) {
   io_service_t interface = MACH_PORT_NULL;
   IOReturn status = IOFBCopyI2CInterfaceForBus(framebuffer, 0, &interface);
   if (status != kIOReturnSuccess || interface == MACH_PORT_NULL) {
@@ -117,8 +118,10 @@ static IOReturn sendI2CRequest(io_service_t framebuffer, IOI2CRequest *request) 
   return status;
 }
 
-static bool ddcGetVCP(io_service_t framebuffer, uint8_t code, uint16_t *value_out) {
-  uint8_t send_buffer[5] = {DDC_HEADER, DDC_LEN_GET_VCP, DDC_CMD_GET_VCP, code, 0};
+static bool ddcGetVCP(io_service_t framebuffer, uint8_t code,
+                      uint16_t *value_out) {
+  uint8_t send_buffer[5] = {DDC_HEADER, DDC_LEN_GET_VCP, DDC_CMD_GET_VCP, code,
+                            0};
   send_buffer[4] = ddcChecksum(send_buffer, 4);
 
   uint8_t reply_buffer[11] = {0};
@@ -148,9 +151,10 @@ static bool ddcGetVCP(io_service_t framebuffer, uint8_t code, uint16_t *value_ou
 }
 
 static bool ddcSetVCP(io_service_t framebuffer, uint8_t code, uint16_t value) {
-  uint8_t send_buffer[7] = {DDC_HEADER, DDC_LEN_SET_VCP,       DDC_CMD_SET_VCP,
-                            code,       (uint8_t)(value >> 8), (uint8_t)(value & 0xFF),
-                            0};
+  uint8_t send_buffer[7] = {
+      DDC_HEADER, DDC_LEN_SET_VCP,       DDC_CMD_SET_VCP,
+      code,       (uint8_t)(value >> 8), (uint8_t)(value & 0xFF),
+      0};
   send_buffer[6] = ddcChecksum(send_buffer, 6);
 
   IOI2CRequest request;
@@ -164,7 +168,8 @@ static bool ddcSetVCP(io_service_t framebuffer, uint8_t code, uint16_t value) {
   return sendI2CRequest(framebuffer, &request) == kIOReturnSuccess;
 }
 
-static bool backupAndZeroGamma(CGDirectDisplayID display_id, DisplayBackup *backup_out) {
+static bool backupAndZeroGamma(CGDirectDisplayID display_id,
+                               DisplayBackup *backup_out) {
   size_t capacity = CGDisplayGammaTableCapacity(display_id);
   if (capacity == 0 || capacity > UINT32_MAX) {
     return false;
@@ -181,8 +186,8 @@ static bool backupAndZeroGamma(CGDirectDisplayID display_id, DisplayBackup *back
   }
 
   uint32_t sample_count = 0;
-  CGError err =
-      CGGetDisplayTransferByTable(display_id, (uint32_t)capacity, red, green, blue, &sample_count);
+  CGError err = CGGetDisplayTransferByTable(display_id, (uint32_t)capacity, red,
+                                            green, blue, &sample_count);
   if (err != kCGErrorSuccess || sample_count == 0) {
     free(red);
     free(green);
@@ -198,7 +203,8 @@ static bool backupAndZeroGamma(CGDirectDisplayID display_id, DisplayBackup *back
     return false;
   }
 
-  err = CGSetDisplayTransferByTable(display_id, sample_count, zeros, zeros, zeros);
+  err = CGSetDisplayTransferByTable(display_id, sample_count, zeros, zeros,
+                                    zeros);
   free(zeros);
   if (err != kCGErrorSuccess) {
     free(red);
@@ -219,10 +225,11 @@ static bool restoreDisplayFromBackup(const DisplayBackup *backup) {
     return false;
   }
 
-  if (backup->gamma_sample_count > 0 && backup->gamma_red != NULL && backup->gamma_green != NULL &&
-      backup->gamma_blue != NULL) {
-    CGSetDisplayTransferByTable(backup->display_id, backup->gamma_sample_count, backup->gamma_red,
-                                backup->gamma_green, backup->gamma_blue);
+  if (backup->gamma_sample_count > 0 && backup->gamma_red != NULL &&
+      backup->gamma_green != NULL && backup->gamma_blue != NULL) {
+    CGSetDisplayTransferByTable(backup->display_id, backup->gamma_sample_count,
+                                backup->gamma_red, backup->gamma_green,
+                                backup->gamma_blue);
   }
 
   io_service_t framebuffer = CGDisplayIOServicePort(backup->display_id);
@@ -268,7 +275,8 @@ uint8_t ExternalDisplayGammaDisableDisplay(CGDirectDisplayID display_id) {
 
   backupAndZeroGamma(display_id, &backup);
 
-  if (display_backups == NULL || display_backup_count >= display_backup_capacity) {
+  if (display_backups == NULL ||
+      display_backup_count >= display_backup_capacity) {
     restoreDisplayFromBackup(&backup);
     free(backup.gamma_red);
     free(backup.gamma_green);
@@ -306,8 +314,9 @@ size_t ExternalDisplayGammaRestoreAll(void) {
   return restored;
 }
 
-uint8_t ExternalDisplayGammaCopyStateView(size_t index,
-                                          ExternalDisplayGammaBackupView *backup_out) {
+uint8_t
+ExternalDisplayGammaCopyStateView(size_t index,
+                                  ExternalDisplayGammaBackupView *backup_out) {
   if (backup_out == NULL || index >= display_backup_count) {
     return 0;
   }
@@ -325,7 +334,8 @@ uint8_t ExternalDisplayGammaCopyStateView(size_t index,
   return 1;
 }
 
-static DisplayBackup backupFromView(const ExternalDisplayGammaBackupView *view) {
+static DisplayBackup
+backupFromView(const ExternalDisplayGammaBackupView *view) {
   DisplayBackup backup = {.display_id = 0,
                           .brightness = 0,
                           .contrast = 0,
@@ -344,8 +354,8 @@ static DisplayBackup backupFromView(const ExternalDisplayGammaBackupView *view) 
   backup.contrast = view->contrast;
   backup.has_brightness = (view->has_brightness != 0);
   backup.has_contrast = (view->has_contrast != 0);
-  if (view->gamma_sample_count > 0 && view->gamma_red != NULL && view->gamma_green != NULL &&
-      view->gamma_blue != NULL) {
+  if (view->gamma_sample_count > 0 && view->gamma_red != NULL &&
+      view->gamma_green != NULL && view->gamma_blue != NULL) {
     backup.gamma_sample_count = view->gamma_sample_count;
     backup.gamma_red = (float *)view->gamma_red;
     backup.gamma_green = (float *)view->gamma_green;
@@ -355,8 +365,8 @@ static DisplayBackup backupFromView(const ExternalDisplayGammaBackupView *view) 
   return backup;
 }
 
-size_t ExternalDisplayGammaRestoreFromState(const ExternalDisplayGammaBackupView *backups,
-                                            size_t count) {
+size_t ExternalDisplayGammaRestoreFromState(
+    const ExternalDisplayGammaBackupView *backups, size_t count) {
   if (backups == NULL && count > 0) {
     clearBackups();
     return 0;

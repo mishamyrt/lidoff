@@ -1,7 +1,5 @@
 mod args;
-mod external_display;
 mod launch_agent;
-mod lid_sensor;
 mod logging;
 mod monitor;
 mod platform;

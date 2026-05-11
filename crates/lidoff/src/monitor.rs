@@ -3,7 +3,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::external_display::{self, ExternalDisplayDisableResult, ExternalDisplayRestoreResult};
+use lidoff_display::{
+    self as external_display, ExternalDisplayDisableResult, ExternalDisplayRestoreResult,
+};
+use lidoff_power::{CaffeinateError, PowerObserver, caffeinate_start, caffeinate_stop};
+
 use crate::logging;
 use crate::platform::{self, LID_ANGLE_ERROR};
 use crate::recovery_state::{self, RecoveryStateData};
@@ -36,6 +40,7 @@ struct MonitorState {
     saved_brightness: f32,
     last_nonzero_brightness: f32,
     brightness_lowered: bool,
+    caffeinate_active: bool,
     last_angle: i32,
     below_threshold_streak: i32,
     last_full_close_at: f64,
@@ -49,6 +54,7 @@ impl MonitorState {
             saved_brightness: -1.0,
             last_nonzero_brightness: -1.0,
             brightness_lowered: false,
+            caffeinate_active: false,
             last_angle: -1,
             below_threshold_streak: 0,
             last_full_close_at: 0.0,
@@ -67,7 +73,11 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
         recover_state_if_needed(&mut state);
     }
 
-    platform::power_observer_start(handle_will_sleep, handle_did_wake, std::ptr::null_mut());
+    let mut observer = PowerObserver::new();
+    if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
+        logging::error(format!("failed to start power observer: {}", e));
+        return;
+    }
 
     let interval = Duration::from_millis(config.interval_ms as u64);
 
@@ -206,9 +216,7 @@ fn restore_display_state_locked(state: &mut MonitorState, log_restore: bool) {
         }
     }
 
-    if !platform::caffeinate_stop() {
-        logging::error("failed to stop caffeinate session");
-    }
+    stop_caffeinate_locked(state);
 }
 
 fn prepare_display_state_for_sleep_locked(state: &mut MonitorState, log_restore: bool) {
@@ -225,8 +233,32 @@ fn prepare_display_state_for_sleep_locked(state: &mut MonitorState, log_restore:
         }
     }
 
-    if !platform::caffeinate_stop() {
-        logging::error("failed to stop caffeinate session");
+    stop_caffeinate_locked(state);
+}
+
+fn start_caffeinate_locked(state: &mut MonitorState) {
+    if state.caffeinate_active {
+        return;
+    }
+
+    match caffeinate_start() {
+        Ok(()) | Err(CaffeinateError::AlreadyActive) => {
+            state.caffeinate_active = true;
+        }
+        Err(error) => logging::error(format!("failed to start caffeinate session: {}", error)),
+    }
+}
+
+fn stop_caffeinate_locked(state: &mut MonitorState) {
+    if !state.caffeinate_active {
+        return;
+    }
+
+    match caffeinate_stop() {
+        Ok(()) | Err(CaffeinateError::NotActive) => {
+            state.caffeinate_active = false;
+        }
+        Err(error) => logging::error(format!("failed to stop caffeinate session: {}", error)),
     }
 }
 
@@ -343,9 +375,7 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64
         let disable_result = external_display::disable();
         log_disable_result(disable_result);
 
-        if !platform::caffeinate_start() {
-            logging::error("failed to start caffeinate session");
-        }
+        start_caffeinate_locked(state);
 
         persist_recovery_state_locked(state);
     }

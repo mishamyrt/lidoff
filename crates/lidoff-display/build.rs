@@ -11,17 +11,13 @@ fn main() {
 
     let native_sources = [
         manifest_dir.join("macos/brightness.c"),
-        manifest_dir.join("macos/caffeinate.c"),
         manifest_dir.join("macos/external_display.c"),
         manifest_dir.join("macos/external_display_gamma.c"),
         manifest_dir.join("macos/external_display_skylight.c"),
-        manifest_dir.join("macos/power_observer.c"),
     ];
     let native_headers = [
         manifest_dir.join("macos/brightness.h"),
-        manifest_dir.join("macos/caffeinate.h"),
         manifest_dir.join("macos/external_display.h"),
-        manifest_dir.join("macos/power_observer.h"),
     ];
 
     for source in &native_sources {

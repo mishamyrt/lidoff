@@ -5,7 +5,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-typedef CGError (*SLSConfigureDisplayEnabledFunc)(CGDisplayConfigRef, CGDirectDisplayID, Boolean);
+typedef CGError (*SLSConfigureDisplayEnabledFunc)(CGDisplayConfigRef,
+                                                  CGDirectDisplayID, Boolean);
 
 static CGDirectDisplayID *skylight_backups = NULL;
 static size_t skylight_backup_count = 0;
@@ -51,7 +52,9 @@ void ExternalDisplaySkylightFinalize(void) {
   }
 }
 
-size_t ExternalDisplaySkylightBackupCount(void) { return skylight_backup_count; }
+size_t ExternalDisplaySkylightBackupCount(void) {
+  return skylight_backup_count;
+}
 
 static void loadSkylight(void) {
   if (skylight_loaded) {
@@ -60,17 +63,19 @@ static void loadSkylight(void) {
 
   skylight_loaded = true;
   skylight_handle =
-      dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW);
+      dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",
+             RTLD_NOW);
   if (skylight_handle == NULL) {
     return;
   }
 
-  SLSConfigureDisplayEnabledPtr =
-      (SLSConfigureDisplayEnabledFunc)dlsym(skylight_handle, "SLSConfigureDisplayEnabled");
+  SLSConfigureDisplayEnabledPtr = (SLSConfigureDisplayEnabledFunc)dlsym(
+      skylight_handle, "SLSConfigureDisplayEnabled");
   skylight_available = (SLSConfigureDisplayEnabledPtr != NULL);
 }
 
-static bool skylightSetDisplayEnabled(CGDirectDisplayID display_id, bool enabled) {
+static bool skylightSetDisplayEnabled(CGDirectDisplayID display_id,
+                                      bool enabled) {
   loadSkylight();
   if (!skylight_available) {
     return false;
@@ -102,7 +107,8 @@ uint8_t ExternalDisplaySkylightDisableDisplay(CGDirectDisplayID display_id) {
     return 0;
   }
 
-  if (skylight_backups == NULL || skylight_backup_count >= skylight_backup_capacity) {
+  if (skylight_backups == NULL ||
+      skylight_backup_count >= skylight_backup_capacity) {
     skylightSetDisplayEnabled(display_id, true);
     return 0;
   }
@@ -136,12 +142,14 @@ size_t ExternalDisplaySkylightRestoreAll(void) {
   return restored;
 }
 
-size_t ExternalDisplaySkylightCopyState(CGDirectDisplayID *display_ids, size_t capacity) {
+size_t ExternalDisplaySkylightCopyState(CGDirectDisplayID *display_ids,
+                                        size_t capacity) {
   if (display_ids == NULL || capacity == 0) {
     return 0;
   }
 
-  size_t copied = skylight_backup_count < capacity ? skylight_backup_count : capacity;
+  size_t copied =
+      skylight_backup_count < capacity ? skylight_backup_count : capacity;
   for (size_t i = 0; i < copied; i++) {
     display_ids[i] = skylight_backups[i];
   }
@@ -149,7 +157,9 @@ size_t ExternalDisplaySkylightCopyState(CGDirectDisplayID *display_ids, size_t c
   return copied;
 }
 
-size_t ExternalDisplaySkylightRestoreFromState(const CGDirectDisplayID *display_ids, size_t count) {
+size_t
+ExternalDisplaySkylightRestoreFromState(const CGDirectDisplayID *display_ids,
+                                        size_t count) {
   if (display_ids == NULL && count > 0) {
     clearSkylightBackups();
     return 0;

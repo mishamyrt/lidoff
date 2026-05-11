@@ -76,10 +76,7 @@ fn load_at_home(home: &Path) -> io::Result<Option<PersistedState>> {
 
     match decode_state(&bytes) {
         Ok(state) => Ok(Some(state)),
-        Err(error) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            error.to_string(),
-        )),
+        Err(error) => Err(io::Error::new(io::ErrorKind::InvalidData, error.to_string())),
     }
 }
 
@@ -127,10 +124,7 @@ fn cleanup_legacy_recovery_file_at(home: &Path) -> io::Result<()> {
         return Ok(());
     }
 
-    logging::info(format!(
-        "removing obsolete recovery state ({})",
-        path.display()
-    ));
+    logging::info(format!("removing obsolete recovery state ({})", path.display()));
     fs::remove_file(path)
 }
 
@@ -166,11 +160,9 @@ mod tests {
 
     impl TestDir {
         fn new() -> Self {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = env::temp_dir().join(format!("lidoff-test-{}-{timestamp}", process::id()));
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let path =
+                env::temp_dir().join(format!("lidoff-test-{}-{timestamp}", process::id()));
             fs::create_dir_all(&path).unwrap();
             Self { path }
         }

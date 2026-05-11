@@ -5,11 +5,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use lidoff_display::{
     self as external_display, ExternalDisplayDisableResult, ExternalDisplayRestoreResult,
+    brightness_get, brightness_set,
 };
 use lidoff_power::{CaffeinateError, PowerObserver, caffeinate_start, caffeinate_stop};
 
 use crate::logging;
-use crate::platform::{self, LID_ANGLE_ERROR};
 use crate::recovery_state::{self, RecoveryStateData};
 
 pub const MONITOR_DEFAULT_THRESHOLD: i32 = 30;
@@ -23,7 +23,6 @@ static POWER_STATE: OnceLock<Arc<Mutex<MonitorState>>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LidState {
-    Unknown,
     FullyClosed,
     PartiallyClosed,
     Open,
@@ -82,11 +81,14 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     let interval = Duration::from_millis(config.interval_ms as u64);
 
     while should_run.load(Ordering::Relaxed) {
-        let angle = platform::lid_sensor_get_angle();
-        if angle == LID_ANGLE_ERROR {
-            thread::sleep(interval);
-            continue;
-        }
+        let angle = match lidoff_lidsensor::get_angle() {
+            Ok(angle) => angle,
+            Err(e) => {
+                logging::error(format!("failed to get lid angle: {}", e));
+                thread::sleep(interval);
+                continue;
+            }
+        };
 
         logging::debug(format!("angle {angle}°"));
         let now = current_time_seconds();
@@ -100,7 +102,6 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
                         handle_partially_closed_locked(&mut state, angle, now)
                     }
                     LidState::Open => handle_open_locked(&mut state),
-                    LidState::Unknown => {}
                 }
                 state.last_angle = angle;
             }
@@ -117,9 +118,6 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
 }
 
 fn lid_state_for_angle(angle: i32, threshold: i32) -> LidState {
-    if angle == LID_ANGLE_ERROR {
-        return LidState::Unknown;
-    }
     if angle < MONITOR_FULL_CLOSE_ANGLE {
         return LidState::FullyClosed;
     }
@@ -176,7 +174,7 @@ fn recover_state_if_needed(state: &mut MonitorState) {
     }
 
     if recovery_state.pending_brightness_restore && recovery_state.saved_brightness >= 0.0 {
-        if platform::brightness_set(recovery_state.saved_brightness) {
+        if brightness_set(recovery_state.saved_brightness) {
             logging::info(format!(
                 "restored brightness to {:.2}",
                 recovery_state.saved_brightness
@@ -201,13 +199,10 @@ fn recover_state_if_needed(state: &mut MonitorState) {
 fn restore_display_state_locked(state: &mut MonitorState, log_restore: bool) {
     if state.brightness_lowered && state.saved_brightness >= 0.0 {
         if log_restore {
-            logging::info(format!(
-                "restoring brightness to {:.2}",
-                state.saved_brightness
-            ));
+            logging::info(format!("restoring brightness to {:.2}", state.saved_brightness));
         }
 
-        if platform::brightness_set(state.saved_brightness) {
+        if brightness_set(state.saved_brightness) {
             state.last_nonzero_brightness = state.saved_brightness;
             state.brightness_lowered = false;
             state.saved_brightness = -1.0;
@@ -228,7 +223,7 @@ fn prepare_display_state_for_sleep_locked(state: &mut MonitorState, log_restore:
             ));
         }
 
-        if !platform::brightness_set(state.saved_brightness) && log_restore {
+        if !brightness_set(state.saved_brightness) && log_restore {
             logging::error("failed to prepare brightness before sleep");
         }
     }
@@ -339,11 +334,7 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64
         return;
     }
 
-    let not_opening = if state.last_angle == -1 {
-        true
-    } else {
-        angle <= state.last_angle
-    };
+    let not_opening = if state.last_angle == -1 { true } else { angle <= state.last_angle };
     if not_opening {
         state.below_threshold_streak += 1;
     } else {
@@ -351,7 +342,7 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64
     }
 
     if state.below_threshold_streak >= MONITOR_PARTIAL_STABILITY_SAMPLES {
-        let current_brightness = platform::brightness_get();
+        let current_brightness = brightness_get();
         if current_brightness < 0.0 {
             logging::error("failed to read brightness");
             return;
@@ -362,7 +353,7 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64
         state.brightness_lowered = true;
         persist_recovery_state_locked(state);
 
-        if !platform::brightness_set(0.0) {
+        if !brightness_set(0.0) {
             state.saved_brightness = -1.0;
             state.brightness_lowered = false;
             persist_recovery_state_locked(state);
@@ -436,7 +427,9 @@ extern "C" fn handle_did_wake(_context: *mut std::ffi::c_void) {
     state.below_threshold_streak = 0;
 }
 
-fn lock_state(shared_state: &Arc<Mutex<MonitorState>>) -> std::sync::MutexGuard<'_, MonitorState> {
+fn lock_state(
+    shared_state: &Arc<Mutex<MonitorState>>,
+) -> std::sync::MutexGuard<'_, MonitorState> {
     match shared_state.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -459,10 +452,6 @@ mod tests {
 
     #[test]
     fn lid_state_tracks_ranges() {
-        assert_eq!(
-            lid_state_for_angle(-1, MONITOR_DEFAULT_THRESHOLD),
-            LidState::Unknown
-        );
         assert_eq!(
             lid_state_for_angle(MONITOR_FULL_CLOSE_ANGLE - 1, MONITOR_DEFAULT_THRESHOLD),
             LidState::FullyClosed

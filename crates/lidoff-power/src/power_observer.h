@@ -6,7 +6,8 @@
 typedef void (*PowerObserverCallback)(void *context);
 
 uint8_t PowerObserverRunLoop(PowerObserverCallback will_sleep,
-                             PowerObserverCallback did_wake, void *context);
+                             PowerObserverCallback did_wake,
+                             void *context);
 
 uint8_t CaffeinateStart(void);
 uint8_t CaffeinateStop(void);

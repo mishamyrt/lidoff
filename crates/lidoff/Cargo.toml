@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 lidoff-display = { workspace = true }
-lidoff-lid = { workspace = true }
+lidoff-lidsensor = { workspace = true }
 lidoff-power = { workspace = true }
 
 bincode = { workspace = true }

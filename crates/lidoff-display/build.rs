@@ -5,7 +5,8 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("missing out dir"));
     let sdk_root = xcrun_sdk_root();
 
@@ -53,17 +54,12 @@ fn main() {
 }
 
 fn xcrun_sdk_root() -> String {
-    let output = Command::new("xcrun")
-        .arg("--show-sdk-path")
-        .output()
-        .expect("failed to run xcrun");
+    let output =
+        Command::new("xcrun").arg("--show-sdk-path").output().expect("failed to run xcrun");
     if !output.status.success() {
         panic!("xcrun --show-sdk-path failed");
     }
-    String::from_utf8(output.stdout)
-        .expect("sdk path is not utf-8")
-        .trim()
-        .to_owned()
+    String::from_utf8(output.stdout).expect("sdk path is not utf-8").trim().to_owned()
 }
 
 fn compile_c(source: &Path, object: &Path, header_dir: &Path, sdk_root: &str) {
@@ -96,9 +92,8 @@ fn create_archive(archive: &Path, objects: &[PathBuf]) {
         command.arg(object);
     }
 
-    let status = command
-        .status()
-        .unwrap_or_else(|err| panic!("failed to archive objc objects: {err}"));
+    let status =
+        command.status().unwrap_or_else(|err| panic!("failed to archive objc objects: {err}"));
     if !status.success() {
         panic!("libtool failed");
     }

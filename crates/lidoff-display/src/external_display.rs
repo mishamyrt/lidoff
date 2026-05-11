@@ -74,7 +74,8 @@ unsafe extern "C" {
     fn ExternalDisplaySkylightRestoreAll() -> usize;
     fn ExternalDisplaySkylightBackupCount() -> usize;
     fn ExternalDisplaySkylightCopyState(display_ids: *mut u32, capacity: usize) -> usize;
-    fn ExternalDisplaySkylightRestoreFromState(display_ids: *const u32, count: usize) -> usize;
+    fn ExternalDisplaySkylightRestoreFromState(display_ids: *const u32, count: usize)
+    -> usize;
 
     fn ExternalDisplayGammaPrepare(display_count: usize) -> u8;
     fn ExternalDisplayGammaFinalize();
@@ -143,7 +144,8 @@ pub fn disable() -> ExternalDisplayDisableResult {
 pub fn restore() -> ExternalDisplayRestoreResult {
     let mut result = ExternalDisplayRestoreResult {
         ok: true,
-        had_backups: EXTERNAL_DISPLAYS_DISABLED.load(Ordering::Relaxed) || live_backups_present(),
+        had_backups: EXTERNAL_DISPLAYS_DISABLED.load(Ordering::Relaxed)
+            || live_backups_present(),
         restored: 0,
     };
 
@@ -193,7 +195,8 @@ pub fn restore_from_state(state: &ExternalDisplayState) -> ExternalDisplayRestor
 
     if !state.gamma_backups.is_empty() {
         let views = gamma_backup_views(&state.gamma_backups);
-        let restored = unsafe { ExternalDisplayGammaRestoreFromState(views.as_ptr(), views.len()) };
+        let restored =
+            unsafe { ExternalDisplayGammaRestoreFromState(views.as_ptr(), views.len()) };
         if restored < state.gamma_backups.len() {
             result.ok = false;
         }
@@ -207,10 +210,7 @@ pub fn restore_from_state(state: &ExternalDisplayState) -> ExternalDisplayRestor
 pub fn copy_state() -> Option<ExternalDisplayState> {
     let skylight_display_ids = copy_skylight_state();
     let gamma_backups = copy_gamma_state();
-    let state = ExternalDisplayState {
-        skylight_display_ids,
-        gamma_backups,
-    };
+    let state = ExternalDisplayState { skylight_display_ids, gamma_backups };
 
     state.has_backups().then_some(state)
 }
@@ -269,7 +269,9 @@ fn clear_backups() {
 }
 
 fn live_backups_present() -> bool {
-    unsafe { ExternalDisplaySkylightBackupCount() > 0 || ExternalDisplayGammaBackupCount() > 0 }
+    unsafe {
+        ExternalDisplaySkylightBackupCount() > 0 || ExternalDisplayGammaBackupCount() > 0
+    }
 }
 
 fn copy_skylight_state() -> Vec<u32> {
@@ -356,21 +358,9 @@ fn gamma_backup_views(backups: &[GammaBackup]) -> Vec<CExternalDisplayGammaBacku
                 has_brightness: bool_to_c(backup.brightness.is_some()),
                 has_contrast: bool_to_c(backup.contrast.is_some()),
                 gamma_sample_count: sample_count,
-                gamma_red: if has_gamma {
-                    backup.gamma_red.as_ptr()
-                } else {
-                    ptr::null()
-                },
-                gamma_green: if has_gamma {
-                    backup.gamma_green.as_ptr()
-                } else {
-                    ptr::null()
-                },
-                gamma_blue: if has_gamma {
-                    backup.gamma_blue.as_ptr()
-                } else {
-                    ptr::null()
-                },
+                gamma_red: if has_gamma { backup.gamma_red.as_ptr() } else { ptr::null() },
+                gamma_green: if has_gamma { backup.gamma_green.as_ptr() } else { ptr::null() },
+                gamma_blue: if has_gamma { backup.gamma_blue.as_ptr() } else { ptr::null() },
             }
         })
         .collect()

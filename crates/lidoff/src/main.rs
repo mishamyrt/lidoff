@@ -2,7 +2,6 @@ mod args;
 mod launch_agent;
 mod logging;
 mod monitor;
-mod platform;
 mod recovery_state;
 
 use std::ffi::c_int;
@@ -28,9 +27,7 @@ fn main() {
 }
 
 fn run() -> i32 {
-    let program_name = std::env::args()
-        .next()
-        .unwrap_or_else(|| "lidoff".to_owned());
+    let program_name = std::env::args().next().unwrap_or_else(|| "lidoff".to_owned());
     let mut raw_args = std::env::args().skip(1).peekable();
 
     if raw_args.any(|arg| arg == "--help" || arg == "-h") {
@@ -62,26 +59,20 @@ fn run() -> i32 {
     }
 
     if parsed.do_install {
-        return if launch_agent::install(parsed.threshold) {
-            0
-        } else {
-            1
-        };
+        return if launch_agent::install(parsed.threshold) { 0 } else { 1 };
     }
 
     install_signal_handlers();
 
-    if !platform::lid_sensor_init() {
+    if lidoff_lidsensor::init().is_err() {
         logging::error("failed to initialize lid sensor");
         return 1;
     }
 
-    let config = MonitorConfig {
-        threshold: parsed.threshold,
-        interval_ms: parsed.interval_ms,
-    };
+    let config =
+        MonitorConfig { threshold: parsed.threshold, interval_ms: parsed.interval_ms };
     monitor::run(&config, &SHOULD_RUN);
-    platform::lid_sensor_close();
+    lidoff_lidsensor::close();
     0
 }
 

@@ -58,9 +58,7 @@ impl Default for PowerObserver {
 
 impl PowerObserver {
     pub fn new() -> Self {
-        Self {
-            context: std::ptr::null_mut(),
-        }
+        Self { context: std::ptr::null_mut() }
     }
 
     pub fn start(

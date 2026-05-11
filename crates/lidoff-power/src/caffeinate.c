@@ -11,32 +11,32 @@ static bool caffeinate_active = false;
 #define CAFFEINATE_ACTIVE 2
 
 uint8_t CaffeinateStart(void) {
-  if (caffeinate_active) {
-    return CAFFEINATE_ACTIVE;
-  }
+    if (caffeinate_active) {
+        return CAFFEINATE_ACTIVE;
+    }
 
-  IOReturn result = IOPMAssertionCreateWithName(
-      kIOPMAssertionTypePreventUserIdleDisplaySleep, kIOPMAssertionLevelOn,
-      CFSTR("lidoff"), &assertion_id);
-  if (result == kIOReturnSuccess) {
-    caffeinate_active = true;
-    return CAFFEINATE_STATUS_SUCCESS;
-  }
+    IOReturn result =
+        IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep,
+                                    kIOPMAssertionLevelOn, CFSTR("lidoff"), &assertion_id);
+    if (result == kIOReturnSuccess) {
+        caffeinate_active = true;
+        return CAFFEINATE_STATUS_SUCCESS;
+    }
 
-  return CAFFEINATE_STATUS_FAILURE;
+    return CAFFEINATE_STATUS_FAILURE;
 }
 
 uint8_t CaffeinateStop(void) {
-  if (!caffeinate_active) {
-    return CAFFEINATE_ACTIVE;
-  }
+    if (!caffeinate_active) {
+        return CAFFEINATE_ACTIVE;
+    }
 
-  IOReturn result = IOPMAssertionRelease(assertion_id);
-  if (result == kIOReturnSuccess) {
-    assertion_id = 0;
-    caffeinate_active = false;
-    return CAFFEINATE_STATUS_SUCCESS;
-  }
+    IOReturn result = IOPMAssertionRelease(assertion_id);
+    if (result == kIOReturnSuccess) {
+        assertion_id = 0;
+        caffeinate_active = false;
+        return CAFFEINATE_STATUS_SUCCESS;
+    }
 
-  return CAFFEINATE_STATUS_FAILURE;
+    return CAFFEINATE_STATUS_FAILURE;
 }

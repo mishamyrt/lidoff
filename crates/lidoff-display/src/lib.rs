@@ -1,8 +1,8 @@
 mod external_display;
 
 pub use external_display::{
-    ExternalDisplayDisableResult, ExternalDisplayRestoreResult, ExternalDisplayState, GammaBackup,
-    are_disabled, copy_state, disable, restore, restore_from_state,
+    ExternalDisplayDisableResult, ExternalDisplayRestoreResult, ExternalDisplayState,
+    GammaBackup, are_disabled, copy_state, disable, restore, restore_from_state,
 };
 
 unsafe extern "C" {

@@ -1,8 +1,6 @@
 # lidoff - MacBook lid angle brightness daemon
 VERSION = 0.3.2
 
-BREW ?= $(shell command -v brew 2>/dev/null)
-LLVM_PREFIX ?= $(shell if [ -n "$(BREW)" ]; then brew --prefix llvm 2>/dev/null; fi)
 LLVM_BIN ?= $(if $(strip $(LLVM_PREFIX)),$(LLVM_PREFIX)/bin,)
 CLANG_TIDY ?= $(shell command -v clang-tidy 2>/dev/null)
 CLANG_FORMAT ?= $(shell command -v clang-format 2>/dev/null)
@@ -33,17 +31,6 @@ CARGO_TARGET = target/release/lidoff
 SCAN_BUILD_DIR = $(BUILD_DIR)/scan-build
 DISPLAY_NATIVE_DIR = crates/lidoff-display/macos
 POWER_NATIVE_DIR = crates/lidoff-power/src
-FORMAT_SOURCES = \
-	$(DISPLAY_NATIVE_DIR)/brightness.c \
-	$(DISPLAY_NATIVE_DIR)/brightness.h \
-	$(DISPLAY_NATIVE_DIR)/external_display.c \
-	$(DISPLAY_NATIVE_DIR)/external_display.h \
-	$(DISPLAY_NATIVE_DIR)/external_display_gamma.c \
-	$(DISPLAY_NATIVE_DIR)/external_display_skylight.c \
-	$(POWER_NATIVE_DIR)/caffeinate.c \
-	$(POWER_NATIVE_DIR)/caffeinate.h \
-	$(POWER_NATIVE_DIR)/power_observer.c \
-	$(POWER_NATIVE_DIR)/power_observer.h
 C_SOURCES = \
 	$(DISPLAY_NATIVE_DIR)/brightness.c \
 	$(DISPLAY_NATIVE_DIR)/external_display.c \
@@ -77,12 +64,11 @@ install: $(TARGET) ## install the daemon
 
 .PHONY: fmt
 fmt: ## run cargo fmt and clang-format
-	cargo fmt --all
-	@if ! command -v "$(CLANG_FORMAT)" >/dev/null 2>&1; then \
-		echo "clang-format not found. Install LLVM with Homebrew: brew install llvm" >&2; \
-		exit 1; \
-	fi
-	@"$(CLANG_FORMAT)" -i -style=file $(FORMAT_SOURCES)
+	@cargo fmt --all
+	@find \
+		crates/ \
+		-iname '*.h' -o -iname '*.c' -o -iname '*.m' \
+		| xargs clang-format -i
 
 .PHONY: lint
 lint: ## run cargo clippy and clang-tidy

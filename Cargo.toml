@@ -10,13 +10,11 @@ license = "MIT"
 [workspace.dependencies]
 lidoff = { path = "./crates/lidoff" }
 lidoff-display = { path = "./crates/lidoff-display" }
-lidoff-lid = { path = "./crates/lidoff-lid" }
+lidoff-lidsensor = { path = "./crates/lidoff-lidsensor" }
 lidoff-power = { path = "./crates/lidoff-power" }
 
 bincode = "1.3"
 serde = { version = "1.0" }
-core-foundation = "0.10"
-core-foundation-sys = "0.8"
 thiserror = "2"
 
 [workspace.lints.rust]

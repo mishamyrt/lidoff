@@ -1,3 +1,6 @@
+use std::marker::PhantomData;
+use std::rc::Rc;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -6,8 +9,10 @@ use crate::{
     shim::{keyboard_backlight_get, keyboard_backlight_set},
 };
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct KeyboardBacklight;
+#[derive(Debug, Default)]
+pub struct KeyboardBacklight {
+    _not_thread_safe: PhantomData<Rc<()>>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct KeyboardBacklightState {
@@ -27,11 +32,11 @@ impl DisplayController for KeyboardBacklight {
     type State = KeyboardBacklightState;
     type Error = KeyboardBacklightError;
 
-    fn is_disabled(&self) -> bool {
+    fn is_disabled(&mut self) -> bool {
         keyboard_backlight_get() == 0.0
     }
 
-    fn disable(&self) -> Result<(), Self::Error> {
+    fn disable(&mut self) -> Result<(), Self::Error> {
         if self.is_disabled() {
             return Err(KeyboardBacklightError::AlreadyDisabled);
         }
@@ -42,12 +47,12 @@ impl DisplayController for KeyboardBacklight {
         Ok(())
     }
 
-    fn get_state(&self) -> Option<Self::State> {
+    fn get_state(&mut self) -> Option<Self::State> {
         let brightness = keyboard_backlight_get();
         (brightness >= 0.0).then_some(KeyboardBacklightState { brightness })
     }
 
-    fn restore_state(&self, state: Self::State) -> Result<(), Self::Error> {
+    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {
         if !keyboard_backlight_set(state.brightness.clamp(0.0, 1.0)) {
             return Err(KeyboardBacklightError::BrightnessFailed);
         }
@@ -57,8 +62,12 @@ impl DisplayController for KeyboardBacklight {
 }
 
 impl KeyboardBacklight {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn disable_from_state(
-        &self,
+        &mut self,
         state: KeyboardBacklightState,
     ) -> Result<(), KeyboardBacklightError> {
         if state.brightness == 0.0 {

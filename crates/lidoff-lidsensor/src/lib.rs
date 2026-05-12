@@ -1,4 +1,8 @@
-use std::ffi::{c_int, c_uchar};
+use std::{
+    ffi::{c_int, c_uchar},
+    marker::PhantomData,
+    rc::Rc,
+};
 use thiserror::Error;
 
 /// Represents errors that can occur when interacting with the lid sensor.
@@ -22,31 +26,43 @@ unsafe extern "C" {
 
 const LID_ANGLE_ERROR: i32 = -1;
 
-/// Initializes the lid sensor.
-///
-/// Returns an error if the sensor could not be initialized.
-pub fn init() -> Result<(), SensorError> {
-    if unsafe { LidSensorInit() == 0 } { Err(SensorError::InitFailed) } else { Ok(()) }
+#[derive(Debug)]
+pub struct LidSensor {
+    _not_thread_safe: PhantomData<Rc<()>>,
 }
 
-/// Closes connection with the lid sensor.
-pub fn close() {
-    unsafe {
-        LidSensorClose();
+impl LidSensor {
+    /// Initializes the lid sensor.
+    ///
+    /// Returns an error if the sensor could not be initialized.
+    pub fn new() -> Result<Self, SensorError> {
+        if unsafe { LidSensorInit() == 0 } {
+            Err(SensorError::InitFailed)
+        } else {
+            Ok(Self { _not_thread_safe: PhantomData })
+        }
+    }
+
+    /// Returns the current lid angle as an integer.
+    ///
+    /// Returns an error if the angle could not be read.
+    pub fn get_angle(&mut self) -> Result<u32, SensorError> {
+        unsafe {
+            let angle = LidSensorGetAngle();
+            if angle == LID_ANGLE_ERROR {
+                Err(SensorError::ReadFailed)
+            } else {
+                let uangle = angle.try_into().map_err(|_| SensorError::AngleOutOfRange)?;
+                Ok(uangle)
+            }
+        }
     }
 }
 
-/// Returns the current lid angle as an integer.
-///
-/// Returns an error if the angle could not be read.
-pub fn get_angle() -> Result<u32, SensorError> {
-    unsafe {
-        let angle = LidSensorGetAngle();
-        if angle == LID_ANGLE_ERROR {
-            Err(SensorError::ReadFailed)
-        } else {
-            let uangle = angle.try_into().map_err(|_| SensorError::AngleOutOfRange)?;
-            Ok(uangle)
+impl Drop for LidSensor {
+    fn drop(&mut self) {
+        unsafe {
+            LidSensorClose();
         }
     }
 }

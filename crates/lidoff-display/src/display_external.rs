@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -15,8 +17,10 @@ use crate::{
 
 static EXTERNAL_DISPLAYS_DISABLED: AtomicBool = AtomicBool::new(false);
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ExternalDisplays;
+#[derive(Debug, Default)]
+pub struct ExternalDisplays {
+    _not_thread_safe: PhantomData<Rc<()>>,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ExternalDisplayState {
@@ -58,11 +62,11 @@ impl DisplayController for ExternalDisplays {
     type State = ExternalDisplayState;
     type Error = ExternalDisplayError;
 
-    fn is_disabled(&self) -> bool {
+    fn is_disabled(&mut self) -> bool {
         EXTERNAL_DISPLAYS_DISABLED.load(Ordering::Relaxed)
     }
 
-    fn disable(&self) -> Result<(), Self::Error> {
+    fn disable(&mut self) -> Result<(), Self::Error> {
         if self.is_disabled() {
             return Err(ExternalDisplayError::AlreadyDisabled);
         }
@@ -91,12 +95,12 @@ impl DisplayController for ExternalDisplays {
         }
     }
 
-    fn get_state(&self) -> Option<Self::State> {
+    fn get_state(&mut self) -> Option<Self::State> {
         let displays = online_displays()?;
         copy_state_with_displays(&displays).ok()
     }
 
-    fn restore_state(&self, state: Self::State) -> Result<(), Self::Error> {
+    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {
         if state.skylight_display_ids.is_empty() {
             EXTERNAL_DISPLAYS_DISABLED.store(false, Ordering::Relaxed);
             return Ok(());
@@ -118,8 +122,12 @@ impl DisplayController for ExternalDisplays {
 }
 
 impl ExternalDisplays {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn capture_and_disable(
-        &self,
+        &mut self,
     ) -> Result<ExternalDisplayDisableResult, ExternalDisplayError> {
         if self.is_disabled() {
             return Err(ExternalDisplayError::AlreadyDisabled);

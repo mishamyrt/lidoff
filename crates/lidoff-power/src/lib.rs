@@ -1,5 +1,7 @@
 use std::{
     ffi::c_void,
+    marker::PhantomData,
+    rc::Rc,
     sync::mpsc::{self, SyncSender},
     thread::{self, JoinHandle},
 };
@@ -40,19 +42,30 @@ unsafe extern "C" {
     ) -> u8;
 }
 
-pub fn caffeinate_start() -> Result<(), CaffeinateError> {
-    match unsafe { CaffeinateStart() } {
-        0 => Ok(()),
-        2 => Err(CaffeinateError::AlreadyActive),
-        _ => Err(CaffeinateError::StartFailed),
-    }
+#[derive(Debug, Default)]
+pub struct Caffeinate {
+    _not_thread_safe: PhantomData<Rc<()>>,
 }
 
-pub fn caffeinate_stop() -> Result<(), CaffeinateError> {
-    match unsafe { CaffeinateStop() } {
-        0 => Ok(()),
-        2 => Err(CaffeinateError::NotActive),
-        _ => Err(CaffeinateError::StopFailed),
+impl Caffeinate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn start(&mut self) -> Result<(), CaffeinateError> {
+        match unsafe { CaffeinateStart() } {
+            0 => Ok(()),
+            2 => Err(CaffeinateError::AlreadyActive),
+            _ => Err(CaffeinateError::StartFailed),
+        }
+    }
+
+    pub fn stop(&mut self) -> Result<(), CaffeinateError> {
+        match unsafe { CaffeinateStop() } {
+            0 => Ok(()),
+            2 => Err(CaffeinateError::NotActive),
+            _ => Err(CaffeinateError::StopFailed),
+        }
     }
 }
 

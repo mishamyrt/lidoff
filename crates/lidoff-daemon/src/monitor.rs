@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use lidoff_lidsensor::LidSensor;
 use lidoff_power::PowerObserver;
 
 use self::effects::{execute_monitor_action, restore_display_state};
@@ -39,7 +40,11 @@ pub(crate) struct MonitorConfig {
     pub recovery_cache_dir: PathBuf,
 }
 
-pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
+pub(crate) fn run(
+    config: &MonitorConfig,
+    should_run: &AtomicBool,
+    lid_sensor: &mut LidSensor,
+) {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
     set_power_state(shared_state.clone(), config.recovery_cache_dir.clone());
 
@@ -54,7 +59,7 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     let interval = Duration::from_millis(config.interval_ms);
 
     while should_run.load(Ordering::Relaxed) {
-        let angle = match lidoff_lidsensor::get_angle() {
+        let angle = match lid_sensor.get_angle() {
             Ok(angle) => angle,
             Err(e) => {
                 logging::error!("failed to get lid angle: {e}");

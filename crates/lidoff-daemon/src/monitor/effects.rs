@@ -6,7 +6,7 @@ use lidoff_display::{
     InternalDisplay, InternalDisplayError, InternalDisplayState, KeyboardBacklight,
     KeyboardBacklightError, KeyboardBacklightState,
 };
-use lidoff_power::{CaffeinateError, caffeinate_start, caffeinate_stop};
+use lidoff_power::{Caffeinate, CaffeinateError};
 
 use super::persistence::persist_recovery_state;
 use super::state::{MonitorAction, MonitorState, SharedMonitorState, lock_state};
@@ -118,7 +118,7 @@ fn restore_keyboard_backlight_state(
         logging::info!("restoring keyboard backlight to {:.2}", saved_state.brightness);
     }
 
-    let keyboard = KeyboardBacklight;
+    let mut keyboard = KeyboardBacklight::new();
     if keyboard.restore_state(saved_state).is_ok() {
         let mut state = lock_state(shared_state);
         if state.keyboard_backlight_state == Some(saved_state) && clear_after_restore {
@@ -138,7 +138,8 @@ fn start_caffeinate(shared_state: &SharedMonitorState) -> bool {
         return false;
     }
 
-    let active = match caffeinate_start() {
+    let mut caffeinate = Caffeinate::new();
+    let active = match caffeinate.start() {
         Ok(()) | Err(CaffeinateError::AlreadyActive) => true,
         Err(error) => {
             logging::error!("failed to start caffeinate session: {error}");
@@ -158,7 +159,8 @@ fn stop_caffeinate(shared_state: &SharedMonitorState) -> bool {
         return false;
     }
 
-    let inactive = match caffeinate_stop() {
+    let mut caffeinate = Caffeinate::new();
+    let inactive = match caffeinate.stop() {
         Ok(()) | Err(CaffeinateError::NotActive) => true,
         Err(error) => {
             logging::error!("failed to stop caffeinate session: {error}");
@@ -178,7 +180,7 @@ fn restore_external_display_state(shared_state: &SharedMonitorState) -> bool {
         return false;
     };
 
-    let external = ExternalDisplays;
+    let mut external = ExternalDisplays::new();
     match external.restore_state(saved_state.clone()) {
         Ok(()) => {
             logging::info!("restored external displays");
@@ -224,7 +226,7 @@ fn apply_internal_display_state(
         logging::info!("{action} to {:.2}", saved_state.brightness);
     }
 
-    let internal = InternalDisplay;
+    let mut internal = InternalDisplay::new();
     if internal.restore_state(saved_state).is_ok() {
         let mut state = lock_state(shared_state);
         if state.internal_display_state == Some(saved_state) {
@@ -243,7 +245,7 @@ fn apply_internal_display_state(
 }
 
 fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState) -> bool {
-    let external = ExternalDisplays;
+    let mut external = ExternalDisplays::new();
     if lock_state(shared_state).external_display_state.is_none() {
         let disable_result = match external.capture_and_disable() {
             Ok(result) => result,
@@ -286,7 +288,7 @@ fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState)
 
 fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
     let mut changed = false;
-    let internal = InternalDisplay;
+    let mut internal = InternalDisplay::new();
     if !internal.is_disabled() {
         if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
             clear_pending_display_state(shared_state);
@@ -303,7 +305,7 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
         changed = true;
     }
 
-    let external = ExternalDisplays;
+    let mut external = ExternalDisplays::new();
     if lock_state(shared_state).external_display_state.is_none()
         && !external.is_disabled()
         && capture_and_disable_external_display_state(shared_state)
@@ -321,7 +323,7 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
 }
 
 fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
-    let internal = InternalDisplay;
+    let mut internal = InternalDisplay::new();
     let Some(current_state) = internal.get_state() else {
         logging::error!("failed to read brightness");
         return;
@@ -364,7 +366,7 @@ fn clear_pending_display_state(shared_state: &SharedMonitorState) {
 }
 
 fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorState) -> bool {
-    let keyboard = KeyboardBacklight;
+    let mut keyboard = KeyboardBacklight::new();
     if lock_state(shared_state).keyboard_backlight_state.is_none() {
         let Some(current_state) = keyboard.get_state() else {
             logging::error!("failed to read keyboard backlight");
@@ -387,7 +389,7 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
 }
 
 fn disable_keyboard_backlight(shared_state: &SharedMonitorState) -> bool {
-    let keyboard = KeyboardBacklight;
+    let mut keyboard = KeyboardBacklight::new();
     handle_keyboard_backlight_disable_result(shared_state, keyboard.disable())
 }
 

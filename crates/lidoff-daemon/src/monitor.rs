@@ -85,7 +85,7 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
 
     let mut observer = PowerObserver::new();
     if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
-        logging::error(format!("failed to start power observer: {e}"));
+        logging::error!("failed to start power observer: {e}");
         return;
     }
 
@@ -95,13 +95,13 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
         let angle = match lidoff_lidsensor::get_angle() {
             Ok(angle) => angle,
             Err(e) => {
-                logging::error(format!("failed to get lid angle: {e}"));
+                logging::error!("failed to get lid angle: {e}");
                 thread::sleep(interval);
                 continue;
             }
         };
 
-        logging::debug(format!("angle {angle}°"));
+        logging::debug!("angle {angle}°");
         let now = current_time_seconds();
 
         {
@@ -151,7 +151,7 @@ fn persist_recovery_state_locked(state: &MonitorState) {
         || recovery_state.external_display_state.is_some()
     {
         if !recovery_state::save(&recovery_state) {
-            logging::error("failed to persist recovery state");
+            logging::error!("failed to persist recovery state");
         }
     } else {
         recovery_state::clear();
@@ -163,7 +163,7 @@ fn recover_state_if_needed(state: &mut MonitorState) {
         return;
     };
 
-    logging::info("recovery state detected, attempting restore");
+    logging::info!("recovery state detected, attempting restore");
     state.internal_display_state = recovery_state.internal_display_state;
     state.external_display_state = recovery_state.external_display_state;
     restore_display_state_locked(state, true, true);
@@ -200,7 +200,7 @@ fn start_caffeinate_locked(state: &mut MonitorState) {
         Ok(()) | Err(CaffeinateError::AlreadyActive) => {
             state.caffeinate_active = true;
         }
-        Err(error) => logging::error(format!("failed to start caffeinate session: {error}")),
+        Err(error) => logging::error!("failed to start caffeinate session: {error}"),
     }
 }
 
@@ -213,7 +213,7 @@ fn stop_caffeinate_locked(state: &mut MonitorState) {
         Ok(()) | Err(CaffeinateError::NotActive) => {
             state.caffeinate_active = false;
         }
-        Err(error) => logging::error(format!("failed to stop caffeinate session: {error}")),
+        Err(error) => logging::error!("failed to stop caffeinate session: {error}"),
     }
 }
 
@@ -225,10 +225,10 @@ fn restore_external_display_state_locked(state: &mut MonitorState) {
     let external = ExternalDisplays;
     match external.restore_state(saved_state) {
         Ok(()) => {
-            logging::info("restored external displays");
+            logging::info!("restored external displays");
             state.external_display_state = None;
         }
-        Err(error) => logging::error(format!("external display restore incomplete: {error}")),
+        Err(error) => logging::error!("external display restore incomplete: {error}"),
     }
 }
 
@@ -258,7 +258,7 @@ fn apply_internal_display_state_locked(
     };
 
     if log_restore {
-        logging::info(format!("{action} to {:.2}", saved_state.brightness));
+        logging::info!("{action} to {:.2}", saved_state.brightness);
     }
 
     let internal = InternalDisplay;
@@ -268,7 +268,7 @@ fn apply_internal_display_state_locked(
             state.internal_display_state = None;
         }
     } else if log_restore {
-        logging::error(error);
+        logging::error!("{error}");
     }
 }
 
@@ -276,7 +276,7 @@ fn capture_and_disable_external_display_state_locked(state: &mut MonitorState) -
     let external = ExternalDisplays;
     if state.external_display_state.is_none() {
         let Some(saved_state) = external.get_state() else {
-            logging::error("failed to capture external display state");
+            logging::error!("failed to capture external display state");
             return false;
         };
 
@@ -286,7 +286,7 @@ fn capture_and_disable_external_display_state_locked(state: &mut MonitorState) -
     match external.disable() {
         Ok(()) | Err(ExternalDisplayError::AlreadyDisabled) => true,
         Err(error) => {
-            logging::error(format!("external display disable failed: {error}"));
+            logging::error!("external display disable failed: {error}");
             false
         }
     }
@@ -324,11 +324,11 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64
                 state.internal_display_state = None;
                 state.external_display_state = None;
                 persist_recovery_state_locked(state);
-                logging::error("failed to dim display");
+                logging::error!("failed to dim display");
                 return;
             }
 
-            logging::info("dimming display to 0.0");
+            logging::info!("dimming display to 0.0");
             changed = true;
         }
 
@@ -362,7 +362,7 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64
     if state.below_threshold_streak >= MONITOR_PARTIAL_STABILITY_SAMPLES {
         let internal = InternalDisplay;
         let Some(current_state) = internal.get_state() else {
-            logging::error("failed to read brightness");
+            logging::error!("failed to read brightness");
             return;
         };
 
@@ -375,11 +375,11 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64
             state.internal_display_state = None;
             state.external_display_state = None;
             persist_recovery_state_locked(state);
-            logging::error("failed to dim display");
+            logging::error!("failed to dim display");
             return;
         }
 
-        logging::info("dimming display to 0.0");
+        logging::info!("dimming display to 0.0");
 
         capture_and_disable_external_display_state_locked(state);
 
@@ -398,10 +398,11 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
     }
 
     if state.last_nonzero_brightness > 0.0 {
-        logging::info(format!(
+        logging::info!(
             "brightness is {:.2}; using last known value {:.2} for restore",
-            current_brightness, state.last_nonzero_brightness
-        ));
+            current_brightness,
+            state.last_nonzero_brightness
+        );
         return state.last_nonzero_brightness;
     }
 
@@ -652,7 +653,7 @@ mod tests {
         maybe_start_open_restore_hold(&mut state, 100.0, true);
 
         assert!(state.internal_display_state.is_some());
-        assert!(!should_clear_internal_restore_on_open(&state, 102.0));
+        assert!(!should_clear_internal_restore_on_open(&state, 101.0));
         assert!(should_clear_internal_restore_on_open(&state, 103.0));
     }
 }

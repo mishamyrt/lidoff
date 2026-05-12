@@ -32,7 +32,7 @@ pub fn run(config: &DaemonConfig) -> bool {
     install_signal_handlers();
 
     if lidoff_lidsensor::init().is_err() {
-        logging::error("failed to initialize lid sensor");
+        logging::error!("failed to initialize lid sensor");
         return false;
     }
 

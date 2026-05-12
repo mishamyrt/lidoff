@@ -43,14 +43,14 @@ struct LegacyPersistedState {
 pub(crate) fn load() -> Option<RecoveryStateData> {
     let home = current_home_dir()?;
     if let Err(error) = cleanup_legacy_recovery_file_at(&home) {
-        logging::error(format!("failed to remove legacy recovery state: {error}"));
+        logging::error!("failed to remove legacy recovery state: {error}");
     }
 
     match load_at_home(&home) {
         Ok(Some(state)) => Some(state),
         Ok(None) => None,
         Err(error) => {
-            logging::error(format!("failed to load recovery state: {error}"));
+            logging::error!("failed to load recovery state: {error}");
             None
         }
     }
@@ -154,7 +154,7 @@ fn cleanup_legacy_recovery_file_at(home: &Path) -> io::Result<()> {
         return Ok(());
     }
 
-    logging::info(format!("removing obsolete recovery state ({})", path.display()));
+    logging::info!("removing obsolete recovery state ({})", path.display());
     fs::remove_file(path)
 }
 

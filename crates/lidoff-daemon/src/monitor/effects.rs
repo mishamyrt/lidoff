@@ -337,7 +337,10 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
         }
     }
 
-    if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
+    if matches!(
+        internal.disable_from_state(current_state),
+        Err(InternalDisplayError::BrightnessFailed)
+    ) {
         clear_pending_display_state(shared_state);
         persist_recovery_state(shared_state, recovery_cache_dir);
         logging::error!("failed to dim display");
@@ -373,6 +376,11 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
             state.keyboard_backlight_state =
                 Some(KeyboardBacklightState { brightness: current_state.brightness });
         }
+
+        return handle_keyboard_backlight_disable_result(
+            shared_state,
+            keyboard.disable_from_state(current_state),
+        );
     }
 
     disable_keyboard_backlight(shared_state)
@@ -380,7 +388,14 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
 
 fn disable_keyboard_backlight(shared_state: &SharedMonitorState) -> bool {
     let keyboard = KeyboardBacklight;
-    match keyboard.disable() {
+    handle_keyboard_backlight_disable_result(shared_state, keyboard.disable())
+}
+
+fn handle_keyboard_backlight_disable_result(
+    shared_state: &SharedMonitorState,
+    result: Result<(), KeyboardBacklightError>,
+) -> bool {
+    match result {
         Ok(()) => {
             logging::info!("dimming keyboard backlight to 0.0");
             true

@@ -55,3 +55,20 @@ impl DisplayController for KeyboardBacklight {
         Ok(())
     }
 }
+
+impl KeyboardBacklight {
+    pub fn disable_from_state(
+        &self,
+        state: KeyboardBacklightState,
+    ) -> Result<(), KeyboardBacklightError> {
+        if state.brightness == 0.0 {
+            return Err(KeyboardBacklightError::AlreadyDisabled);
+        }
+
+        if !keyboard_backlight_set(0.0) {
+            return Err(KeyboardBacklightError::BrightnessFailed);
+        }
+
+        Ok(())
+    }
+}

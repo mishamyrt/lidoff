@@ -57,3 +57,20 @@ impl DisplayController for InternalDisplay {
         Ok(())
     }
 }
+
+impl InternalDisplay {
+    pub fn disable_from_state(
+        &self,
+        state: InternalDisplayState,
+    ) -> Result<(), InternalDisplayError> {
+        if state.brightness == 0.0 {
+            return Err(InternalDisplayError::AlreadyDisabled);
+        }
+
+        if !brightness_set(0.0) {
+            return Err(InternalDisplayError::BrightnessFailed);
+        }
+
+        Ok(())
+    }
+}

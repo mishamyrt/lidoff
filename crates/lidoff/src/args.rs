@@ -48,7 +48,10 @@ where
                         print_usage: true,
                     });
                 };
-                let threshold = value.parse::<u32>().unwrap_or(0);
+                let threshold = value.parse::<u32>().map_err(|_| ParseError {
+                    message: format!("invalid threshold: {value} (0-180)"),
+                    print_usage: false,
+                })?;
                 if !(0..=180).contains(&threshold) {
                     return Err(ParseError {
                         message: format!("invalid threshold: {threshold} (0-180)"),
@@ -64,7 +67,10 @@ where
                         print_usage: true,
                     });
                 };
-                let interval_ms = value.parse::<u64>().unwrap_or(0);
+                let interval_ms = value.parse::<u64>().map_err(|_| ParseError {
+                    message: format!("invalid interval: {value} (100-10000)"),
+                    print_usage: false,
+                })?;
                 if !(100..=10_000).contains(&interval_ms) {
                     return Err(ParseError {
                         message: format!("invalid interval: {interval_ms} (100-10000)"),
@@ -80,6 +86,13 @@ where
                 });
             }
         }
+    }
+
+    if parsed.do_install && parsed.do_uninstall {
+        return Err(ParseError {
+            message: "--enable and --disable cannot be used together".to_owned(),
+            print_usage: true,
+        });
     }
 
     Ok(parsed)
@@ -142,5 +155,26 @@ mod tests {
         let error = parse(["--threshold".to_owned(), "181".to_owned()]).unwrap_err();
         assert_eq!(error.message, "invalid threshold: 181 (0-180)");
         assert!(!error.print_usage);
+    }
+
+    #[test]
+    fn rejects_unparseable_threshold() {
+        let error = parse(["--threshold".to_owned(), "abc".to_owned()]).unwrap_err();
+        assert_eq!(error.message, "invalid threshold: abc (0-180)");
+        assert!(!error.print_usage);
+    }
+
+    #[test]
+    fn rejects_unparseable_interval() {
+        let error = parse(["--interval".to_owned(), "abc".to_owned()]).unwrap_err();
+        assert_eq!(error.message, "invalid interval: abc (100-10000)");
+        assert!(!error.print_usage);
+    }
+
+    #[test]
+    fn rejects_install_and_uninstall_together() {
+        let error = parse(["--enable".to_owned(), "--disable".to_owned()]).unwrap_err();
+        assert_eq!(error.message, "--enable and --disable cannot be used together");
+        assert!(error.print_usage);
     }
 }

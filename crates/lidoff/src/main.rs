@@ -14,21 +14,21 @@ fn main() {
 #[allow(clippy::print_stdout)]
 #[allow(clippy::print_stderr)]
 fn run() -> i32 {
-    let program_name = std::env::args().next().unwrap_or_else(|| "lidoff".to_owned());
-    let mut raw_args = std::env::args().skip(1);
+    let mut args = std::env::args();
+    let program_name = args.next().unwrap_or_else(|| "lidoff".to_owned());
+    let raw_args = args.collect::<Vec<_>>();
 
-    if raw_args.any(|arg| arg == "--help" || arg == "-h") {
+    if raw_args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage(&program_name);
         return 0;
     }
 
-    let mut raw_args = std::env::args().skip(1);
-    if raw_args.any(|arg| arg == "--version") {
+    if raw_args.iter().any(|arg| arg == "--version") {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return 0;
     }
 
-    let parsed = match parse(std::env::args().skip(1)) {
+    let parsed = match parse(raw_args) {
         Ok(parsed) => parsed,
         Err(error) => {
             eprintln!("lidoff: {}", error.message);

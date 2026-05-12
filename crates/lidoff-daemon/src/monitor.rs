@@ -54,6 +54,15 @@ struct MonitorState {
     system_sleeping: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MonitorAction {
+    None,
+    RestoreDisplayState { log_restore: bool, clear_internal_after_restore: bool },
+    PrepareDisplayStateForSleep { log_restore: bool },
+    ResumePartialDim,
+    StartPartialDim,
+}
+
 impl MonitorState {
     fn new() -> Self {
         Self {
@@ -78,10 +87,7 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
     let _ = POWER_STATE.set(shared_state.clone());
 
-    {
-        let mut state = lock_state(&shared_state);
-        recover_state_if_needed(&mut state);
-    }
+    recover_state_if_needed(&shared_state);
 
     let mut observer = PowerObserver::new();
     if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
@@ -104,31 +110,34 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
         logging::debug!("angle {angle}°");
         let now = current_time_seconds();
 
-        {
+        let action = {
             let mut state = lock_state(&shared_state);
-            if !state.system_sleeping {
+            if state.system_sleeping {
+                MonitorAction::None
+            } else {
                 let lid_state = lid_state_for_angle(angle, config.threshold);
                 let state_changed = state.last_lid_state != Some(lid_state);
-                match lid_state {
+                let action = match lid_state {
                     LidState::FullyClosed => {
-                        handle_fully_closed_locked(&mut state, now, state_changed);
+                        handle_fully_closed_locked(&mut state, now, state_changed)
                     }
                     LidState::PartiallyClosed => {
-                        handle_partially_closed_locked(&mut state, angle, now);
+                        handle_partially_closed_locked(&mut state, angle, now)
                     }
                     LidState::Open => handle_open_locked(&mut state, now, state_changed),
-                }
+                };
                 state.last_angle = Some(angle);
                 state.last_lid_state = Some(lid_state);
+                action
             }
-        }
+        };
+        execute_monitor_action(&shared_state, action);
 
         thread::sleep(interval);
     }
 
-    let mut state = lock_state(&shared_state);
-    restore_display_state_locked(&mut state, false, true);
-    persist_recovery_state_locked(&state);
+    restore_display_state(&shared_state, false, true);
+    persist_recovery_state(&shared_state);
 }
 
 fn lid_state_for_angle(angle: u32, threshold: u32) -> LidState {
@@ -141,16 +150,18 @@ fn lid_state_for_angle(angle: u32, threshold: u32) -> LidState {
     LidState::Open
 }
 
-fn persist_recovery_state_locked(state: &MonitorState) {
-    let recovery_state = RecoveryStateData {
+fn recovery_state_data(state: &MonitorState) -> RecoveryStateData {
+    RecoveryStateData {
         internal_display_state: state.internal_display_state,
         external_display_state: state.external_display_state.clone(),
-    };
+    }
+}
 
+fn persist_recovery_state_data(recovery_state: &RecoveryStateData) {
     if recovery_state.internal_display_state.is_some()
         || recovery_state.external_display_state.is_some()
     {
-        if !recovery_state::save(&recovery_state) {
+        if !recovery_state::save(recovery_state) {
             logging::error!("failed to persist recovery state");
         }
     } else {
@@ -158,87 +169,138 @@ fn persist_recovery_state_locked(state: &MonitorState) {
     }
 }
 
-fn recover_state_if_needed(state: &mut MonitorState) {
+fn persist_recovery_state(shared_state: &Arc<Mutex<MonitorState>>) {
+    let recovery_state = {
+        let state = lock_state(shared_state);
+        recovery_state_data(&state)
+    };
+    persist_recovery_state_data(&recovery_state);
+}
+
+fn recover_state_if_needed(shared_state: &Arc<Mutex<MonitorState>>) {
     let Some(recovery_state) = recovery_state::load() else {
         return;
     };
 
     logging::info!("recovery state detected, attempting restore");
-    state.internal_display_state = recovery_state.internal_display_state;
-    state.external_display_state = recovery_state.external_display_state;
-    restore_display_state_locked(state, true, true);
-    persist_recovery_state_locked(state);
+    {
+        let mut state = lock_state(shared_state);
+        state.internal_display_state = recovery_state.internal_display_state;
+        state.external_display_state = recovery_state.external_display_state;
+    }
+    restore_display_state(shared_state, true, true);
+    persist_recovery_state(shared_state);
 }
 
-fn restore_display_state_locked(
-    state: &mut MonitorState,
+fn execute_monitor_action(shared_state: &Arc<Mutex<MonitorState>>, action: MonitorAction) {
+    match action {
+        MonitorAction::None => {}
+        MonitorAction::RestoreDisplayState { log_restore, clear_internal_after_restore } => {
+            restore_display_state(shared_state, log_restore, clear_internal_after_restore);
+            persist_recovery_state(shared_state);
+        }
+        MonitorAction::PrepareDisplayStateForSleep { log_restore } => {
+            prepare_display_state_for_sleep(shared_state, log_restore);
+            persist_recovery_state(shared_state);
+        }
+        MonitorAction::ResumePartialDim => resume_partial_dim(shared_state),
+        MonitorAction::StartPartialDim => start_partial_dim(shared_state),
+    }
+}
+
+fn restore_display_state(
+    shared_state: &Arc<Mutex<MonitorState>>,
     log_restore: bool,
     clear_internal_after_restore: bool,
 ) {
-    restore_external_display_state_locked(state);
-    restore_internal_display_state_locked(state, log_restore, clear_internal_after_restore);
-    stop_caffeinate_locked(state);
+    restore_external_display_state(shared_state);
+    restore_internal_display_state(shared_state, log_restore, clear_internal_after_restore);
+    stop_caffeinate(shared_state);
 }
 
-fn prepare_display_state_for_sleep_locked(state: &mut MonitorState, log_restore: bool) {
-    apply_internal_display_state_locked(
-        state,
+fn prepare_display_state_for_sleep(
+    shared_state: &Arc<Mutex<MonitorState>>,
+    log_restore: bool,
+) {
+    apply_internal_display_state(
+        shared_state,
         false,
         log_restore,
         "preparing sleep brightness",
         "failed to prepare brightness before sleep",
     );
-    stop_caffeinate_locked(state);
+    stop_caffeinate(shared_state);
 }
 
-fn start_caffeinate_locked(state: &mut MonitorState) {
-    if state.caffeinate_active {
-        return;
+fn start_caffeinate(shared_state: &Arc<Mutex<MonitorState>>) -> bool {
+    if lock_state(shared_state).caffeinate_active {
+        return false;
     }
 
-    match caffeinate_start() {
-        Ok(()) | Err(CaffeinateError::AlreadyActive) => {
-            state.caffeinate_active = true;
+    let active = match caffeinate_start() {
+        Ok(()) | Err(CaffeinateError::AlreadyActive) => true,
+        Err(error) => {
+            logging::error!("failed to start caffeinate session: {error}");
+            false
         }
-        Err(error) => logging::error!("failed to start caffeinate session: {error}"),
+    };
+
+    if active {
+        lock_state(shared_state).caffeinate_active = true;
     }
+
+    active
 }
 
-fn stop_caffeinate_locked(state: &mut MonitorState) {
-    if !state.caffeinate_active {
-        return;
+fn stop_caffeinate(shared_state: &Arc<Mutex<MonitorState>>) -> bool {
+    if !lock_state(shared_state).caffeinate_active {
+        return false;
     }
 
-    match caffeinate_stop() {
-        Ok(()) | Err(CaffeinateError::NotActive) => {
-            state.caffeinate_active = false;
+    let inactive = match caffeinate_stop() {
+        Ok(()) | Err(CaffeinateError::NotActive) => true,
+        Err(error) => {
+            logging::error!("failed to stop caffeinate session: {error}");
+            false
         }
-        Err(error) => logging::error!("failed to stop caffeinate session: {error}"),
+    };
+
+    if inactive {
+        lock_state(shared_state).caffeinate_active = false;
     }
+
+    inactive
 }
 
-fn restore_external_display_state_locked(state: &mut MonitorState) {
-    let Some(saved_state) = state.external_display_state.clone() else {
-        return;
+fn restore_external_display_state(shared_state: &Arc<Mutex<MonitorState>>) -> bool {
+    let Some(saved_state) = lock_state(shared_state).external_display_state.clone() else {
+        return false;
     };
 
     let external = ExternalDisplays;
-    match external.restore_state(saved_state) {
+    match external.restore_state(saved_state.clone()) {
         Ok(()) => {
             logging::info!("restored external displays");
-            state.external_display_state = None;
+            let mut state = lock_state(shared_state);
+            if state.external_display_state.as_ref() == Some(&saved_state) {
+                state.external_display_state = None;
+            }
+            true
         }
-        Err(error) => logging::error!("external display restore incomplete: {error}"),
+        Err(error) => {
+            logging::error!("external display restore incomplete: {error}");
+            false
+        }
     }
 }
 
-fn restore_internal_display_state_locked(
-    state: &mut MonitorState,
+fn restore_internal_display_state(
+    shared_state: &Arc<Mutex<MonitorState>>,
     log_restore: bool,
     clear_after_restore: bool,
 ) {
-    apply_internal_display_state_locked(
-        state,
+    apply_internal_display_state(
+        shared_state,
         clear_after_restore,
         log_restore,
         "restoring brightness",
@@ -246,15 +308,15 @@ fn restore_internal_display_state_locked(
     );
 }
 
-fn apply_internal_display_state_locked(
-    state: &mut MonitorState,
+fn apply_internal_display_state(
+    shared_state: &Arc<Mutex<MonitorState>>,
     clear_after_restore: bool,
     log_restore: bool,
     action: &str,
     error: &str,
-) {
-    let Some(saved_state) = state.internal_display_state else {
-        return;
+) -> bool {
+    let Some(saved_state) = lock_state(shared_state).internal_display_state else {
+        return false;
     };
 
     if log_restore {
@@ -263,24 +325,36 @@ fn apply_internal_display_state_locked(
 
     let internal = InternalDisplay;
     if internal.restore_state(saved_state).is_ok() {
-        state.last_nonzero_brightness = saved_state.brightness;
-        if clear_after_restore {
-            state.internal_display_state = None;
+        let mut state = lock_state(shared_state);
+        if state.internal_display_state == Some(saved_state) {
+            state.last_nonzero_brightness = saved_state.brightness;
+            if clear_after_restore {
+                state.internal_display_state = None;
+            }
         }
-    } else if log_restore {
-        logging::error!("{error}");
+        true
+    } else {
+        if log_restore {
+            logging::error!("{error}");
+        }
+        false
     }
 }
 
-fn capture_and_disable_external_display_state_locked(state: &mut MonitorState) -> bool {
+fn capture_and_disable_external_display_state(
+    shared_state: &Arc<Mutex<MonitorState>>,
+) -> bool {
     let external = ExternalDisplays;
-    if state.external_display_state.is_none() {
+    if lock_state(shared_state).external_display_state.is_none() {
         let Some(saved_state) = external.get_state() else {
             logging::error!("failed to capture external display state");
             return false;
         };
 
-        state.external_display_state = Some(saved_state);
+        let mut state = lock_state(shared_state);
+        if state.external_display_state.is_none() {
+            state.external_display_state = Some(saved_state);
+        }
     }
 
     match external.disable() {
@@ -292,63 +366,39 @@ fn capture_and_disable_external_display_state_locked(state: &mut MonitorState) -
     }
 }
 
-fn handle_fully_closed_locked(state: &mut MonitorState, now: f64, state_changed: bool) {
+fn handle_fully_closed_locked(
+    state: &mut MonitorState,
+    now: f64,
+    state_changed: bool,
+) -> MonitorAction {
     state.last_full_close_at = now;
     state.awaiting_open_after_full_close = true;
     state.below_threshold_streak = 0;
 
     if !should_prepare_fully_closed(state, state_changed) {
-        return;
+        return MonitorAction::None;
     }
 
-    prepare_display_state_for_sleep_locked(state, true);
-    persist_recovery_state_locked(state);
+    MonitorAction::PrepareDisplayStateForSleep { log_restore: true }
 }
 
 fn should_prepare_fully_closed(state: &MonitorState, state_changed: bool) -> bool {
     state_changed || state.caffeinate_active
 }
 
-fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64) {
+fn handle_partially_closed_locked(
+    state: &mut MonitorState,
+    angle: u32,
+    now: f64,
+) -> MonitorAction {
     if partial_dimming_suppression_reason(state, now).is_some() {
         state.below_threshold_streak = 0;
-        return;
+        return MonitorAction::None;
     }
 
     if state.internal_display_state.is_some() {
         state.below_threshold_streak = 0;
-        let mut changed = false;
-        let internal = InternalDisplay;
-        if !internal.is_disabled() {
-            if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
-                state.internal_display_state = None;
-                state.external_display_state = None;
-                persist_recovery_state_locked(state);
-                logging::error!("failed to dim display");
-                return;
-            }
-
-            logging::info!("dimming display to 0.0");
-            changed = true;
-        }
-
-        let external = ExternalDisplays;
-        if state.external_display_state.is_none()
-            && !external.is_disabled()
-            && capture_and_disable_external_display_state_locked(state)
-        {
-            changed = true;
-        }
-
-        if !state.caffeinate_active {
-            start_caffeinate_locked(state);
-            changed = true;
-        }
-
-        if changed {
-            persist_recovery_state_locked(state);
-        }
-        return;
+        return MonitorAction::ResumePartialDim;
     }
 
     let not_opening =
@@ -360,35 +410,79 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64
     }
 
     if state.below_threshold_streak >= MONITOR_PARTIAL_STABILITY_SAMPLES {
-        let internal = InternalDisplay;
-        let Some(current_state) = internal.get_state() else {
-            logging::error!("failed to read brightness");
-            return;
-        };
+        return MonitorAction::StartPartialDim;
+    }
 
-        let brightness_to_restore =
-            brightness_snapshot_for_dim(state, current_state.brightness);
-        state.internal_display_state =
-            Some(InternalDisplayState { brightness: brightness_to_restore });
+    MonitorAction::None
+}
 
+fn resume_partial_dim(shared_state: &Arc<Mutex<MonitorState>>) {
+    let mut changed = false;
+    let internal = InternalDisplay;
+    if !internal.is_disabled() {
         if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
-            state.internal_display_state = None;
-            state.external_display_state = None;
-            persist_recovery_state_locked(state);
+            clear_pending_display_state(shared_state);
+            persist_recovery_state(shared_state);
             logging::error!("failed to dim display");
             return;
         }
 
         logging::info!("dimming display to 0.0");
-
-        capture_and_disable_external_display_state_locked(state);
-
-        if !state.caffeinate_active {
-            start_caffeinate_locked(state);
-        }
-
-        persist_recovery_state_locked(state);
+        changed = true;
     }
+
+    let external = ExternalDisplays;
+    if lock_state(shared_state).external_display_state.is_none()
+        && !external.is_disabled()
+        && capture_and_disable_external_display_state(shared_state)
+    {
+        changed = true;
+    }
+
+    if start_caffeinate(shared_state) {
+        changed = true;
+    }
+
+    if changed {
+        persist_recovery_state(shared_state);
+    }
+}
+
+fn start_partial_dim(shared_state: &Arc<Mutex<MonitorState>>) {
+    let internal = InternalDisplay;
+    let Some(current_state) = internal.get_state() else {
+        logging::error!("failed to read brightness");
+        return;
+    };
+
+    {
+        let mut state = lock_state(shared_state);
+        if state.internal_display_state.is_none() {
+            let brightness_to_restore =
+                brightness_snapshot_for_dim(&mut state, current_state.brightness);
+            state.internal_display_state =
+                Some(InternalDisplayState { brightness: brightness_to_restore });
+        }
+    }
+
+    if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
+        clear_pending_display_state(shared_state);
+        persist_recovery_state(shared_state);
+        logging::error!("failed to dim display");
+        return;
+    }
+
+    logging::info!("dimming display to 0.0");
+
+    capture_and_disable_external_display_state(shared_state);
+    start_caffeinate(shared_state);
+    persist_recovery_state(shared_state);
+}
+
+fn clear_pending_display_state(shared_state: &Arc<Mutex<MonitorState>>) {
+    let mut state = lock_state(shared_state);
+    state.internal_display_state = None;
+    state.external_display_state = None;
 }
 
 fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32) -> f32 {
@@ -439,7 +533,11 @@ fn since(timestamp: f64, now: f64) -> f64 {
     if timestamp > 0.0 { now - timestamp } else { f64::INFINITY }
 }
 
-fn handle_open_locked(state: &mut MonitorState, now: f64, state_changed: bool) {
+fn handle_open_locked(
+    state: &mut MonitorState,
+    now: f64,
+    state_changed: bool,
+) -> MonitorAction {
     state.below_threshold_streak = 0;
     let opening_after_full_close = state.awaiting_open_after_full_close;
     state.awaiting_open_after_full_close = false;
@@ -449,15 +547,15 @@ fn handle_open_locked(state: &mut MonitorState, now: f64, state_changed: bool) {
     maybe_start_open_restore_hold(state, now, opening_after_full_close);
 
     if !should_restore_on_open(state) {
-        return;
+        return MonitorAction::None;
     }
 
     let clear_internal_after_restore = should_clear_internal_restore_on_open(state, now);
-    restore_display_state_locked(state, true, clear_internal_after_restore);
     if clear_internal_after_restore {
         state.keep_internal_restore_until = 0.0;
     }
-    persist_recovery_state_locked(state);
+
+    MonitorAction::RestoreDisplayState { log_restore: true, clear_internal_after_restore }
 }
 
 fn should_clear_internal_restore_on_open(state: &MonitorState, now: f64) -> bool {
@@ -486,18 +584,20 @@ extern "C" fn handle_will_sleep(_context: *mut std::ffi::c_void) {
     };
 
     let now = current_time_seconds();
-    let mut state = lock_state(shared_state);
-    state.system_sleeping = true;
-    state.last_full_close_at = now;
-    state.last_open_at = 0.0;
-    state.last_wake_at = 0.0;
-    state.awaiting_open_after_full_close = true;
-    state.keep_internal_restore_until = 0.0;
-    state.last_angle = None;
-    state.last_lid_state = None;
-    state.below_threshold_streak = 0;
-    prepare_display_state_for_sleep_locked(&mut state, false);
-    persist_recovery_state_locked(&state);
+    {
+        let mut state = lock_state(shared_state);
+        state.system_sleeping = true;
+        state.last_full_close_at = now;
+        state.last_open_at = 0.0;
+        state.last_wake_at = 0.0;
+        state.awaiting_open_after_full_close = true;
+        state.keep_internal_restore_until = 0.0;
+        state.last_angle = None;
+        state.last_lid_state = None;
+        state.below_threshold_streak = 0;
+    }
+    prepare_display_state_for_sleep(shared_state, false);
+    persist_recovery_state(shared_state);
 }
 
 extern "C" fn handle_did_wake(_context: *mut std::ffi::c_void) {

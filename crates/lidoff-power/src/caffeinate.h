@@ -1,9 +1,9 @@
-#ifndef POWER_OBSERVER_H
-#define POWER_OBSERVER_H
+#ifndef CAFFEINATE_H
+#define CAFFEINATE_H
 
 #include <stdint.h>
 
 uint8_t CaffeinateStart(void);
 uint8_t CaffeinateStop(void);
 
-#endif /* POWER_OBSERVER_H */
+#endif /* CAFFEINATE_H */

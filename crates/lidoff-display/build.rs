@@ -11,14 +11,14 @@ fn main() {
     let sdk_root = xcrun_sdk_root();
 
     let native_sources = [
-        manifest_dir.join("macos/brightness.c"),
-        manifest_dir.join("macos/external_display.c"),
-        manifest_dir.join("macos/external_display_gamma.c"),
-        manifest_dir.join("macos/external_display_skylight.c"),
+        manifest_dir.join("src/coregraphics/brightness.c"),
+        manifest_dir.join("src/coregraphics/displays.c"),
+        manifest_dir.join("src/coregraphics/skylight.c"),
     ];
     let native_headers = [
-        manifest_dir.join("macos/brightness.h"),
-        manifest_dir.join("macos/external_display.h"),
+        manifest_dir.join("src/coregraphics/brightness.h"),
+        manifest_dir.join("src/coregraphics/displays.h"),
+        manifest_dir.join("src/coregraphics/skylight.h"),
     ];
 
     for source in &native_sources {
@@ -56,9 +56,7 @@ fn main() {
 fn xcrun_sdk_root() -> String {
     let output =
         Command::new("xcrun").arg("--show-sdk-path").output().expect("failed to run xcrun");
-    if !output.status.success() {
-        panic!("xcrun --show-sdk-path failed");
-    }
+    assert!(output.status.success(), "xcrun --show-sdk-path failed");
     String::from_utf8(output.stdout).expect("sdk path is not utf-8").trim().to_owned()
 }
 
@@ -80,9 +78,7 @@ fn compile_c(source: &Path, object: &Path, header_dir: &Path, sdk_root: &str) {
         .status()
         .unwrap_or_else(|err| panic!("failed to compile {}: {err}", source.display()));
 
-    if !status.success() {
-        panic!("clang failed for {}", source.display());
-    }
+    assert!(status.success(), "clang failed for {}", source.display());
 }
 
 fn create_archive(archive: &Path, objects: &[PathBuf]) {
@@ -94,7 +90,5 @@ fn create_archive(archive: &Path, objects: &[PathBuf]) {
 
     let status =
         command.status().unwrap_or_else(|err| panic!("failed to archive objc objects: {err}"));
-    if !status.success() {
-        panic!("libtool failed");
-    }
+    assert!(status.success(), "libtool failed");
 }

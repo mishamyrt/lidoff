@@ -1,4 +1,4 @@
-#include "external_display.h"
+#include "skylight.h"
 
 #include <CoreGraphics/CGDisplayConfiguration.h>
 #include <dlfcn.h>
@@ -30,11 +30,11 @@ static void clearSkylightBackups(void) {
     skylight_backup_capacity = 0;
 }
 
-void ExternalDisplaySkylightClearBackups(void) {
+void SkylightClearBackups(void) {
     clearSkylightBackups();
 }
 
-uint8_t ExternalDisplaySkylightPrepare(size_t display_count) {
+uint8_t SkylightPrepare(size_t display_count) {
     clearSkylightBackups();
     if (display_count == 0) {
         return 1;
@@ -49,13 +49,13 @@ uint8_t ExternalDisplaySkylightPrepare(size_t display_count) {
     return 1;
 }
 
-void ExternalDisplaySkylightFinalize(void) {
+void SkylightFinalize(void) {
     if (skylight_backup_count == 0) {
         clearSkylightBackups();
     }
 }
 
-size_t ExternalDisplaySkylightBackupCount(void) {
+size_t SkylightBackupCount(void) {
     return skylight_backup_count;
 }
 
@@ -103,7 +103,17 @@ static bool skylightSetDisplayEnabled(CGDirectDisplayID display_id, bool enabled
     return true;
 }
 
-uint8_t ExternalDisplaySkylightDisableDisplay(CGDirectDisplayID display_id) {
+uint8_t SkylightCaptureDisplay(CGDirectDisplayID display_id) {
+    if (display_id == kCGNullDirectDisplay || skylight_backups == NULL ||
+        skylight_backup_count >= skylight_backup_capacity) {
+        return 0;
+    }
+
+    skylight_backups[skylight_backup_count++] = display_id;
+    return 1;
+}
+
+uint8_t SkylightDisableDisplay(CGDirectDisplayID display_id) {
     if (!skylightSetDisplayEnabled(display_id, false)) {
         return 0;
     }
@@ -117,7 +127,7 @@ uint8_t ExternalDisplaySkylightDisableDisplay(CGDirectDisplayID display_id) {
     return 1;
 }
 
-size_t ExternalDisplaySkylightRestoreAll(void) {
+size_t SkylightRestoreAll(void) {
     if (skylight_backups == NULL || skylight_backup_count == 0) {
         return 0;
     }
@@ -142,7 +152,7 @@ size_t ExternalDisplaySkylightRestoreAll(void) {
     return restored;
 }
 
-size_t ExternalDisplaySkylightCopyState(CGDirectDisplayID *display_ids, size_t capacity) {
+size_t SkylightCopyState(CGDirectDisplayID *display_ids, size_t capacity) {
     if (display_ids == NULL || capacity == 0) {
         return 0;
     }
@@ -155,8 +165,7 @@ size_t ExternalDisplaySkylightCopyState(CGDirectDisplayID *display_ids, size_t c
     return copied;
 }
 
-size_t ExternalDisplaySkylightRestoreFromState(const CGDirectDisplayID *display_ids,
-                                               size_t count) {
+size_t SkylightRestoreFromState(const CGDirectDisplayID *display_ids, size_t count) {
     if (display_ids == NULL && count > 0) {
         clearSkylightBackups();
         return 0;

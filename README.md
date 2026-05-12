@@ -99,8 +99,6 @@ Quality targets:
 - `make fmt` — runs `cargo fmt` and `clang-format`
 - `make lint` — runs `cargo clippy` and `clang-tidy`
 - `make test` — runs Rust unit tests
-- `make analyze` — runs Clang Static Analyzer through `scan-build` against the native C shim layer and writes the HTML report to `build/scan-build`
-- `make check` — runs `make fmt`, `make lint`, `make test`, and `make analyze`; this is required in CI for every pull request
 
 The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings
 do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.

@@ -1,23 +1,27 @@
-mod external_display;
+mod coregraphics;
+mod display_external;
+mod display_internal;
 
-pub use external_display::{
-    ExternalDisplayDisableResult, ExternalDisplayRestoreResult, ExternalDisplayState,
-    GammaBackup, are_disabled, copy_state, disable, restore, restore_from_state,
-};
+pub use display_external::{ExternalDisplayError, ExternalDisplayState, ExternalDisplays};
+pub use display_internal::{InternalDisplay, InternalDisplayError, InternalDisplayState};
 
-unsafe extern "C" {
-    fn BrightnessGet() -> f32;
-    fn BrightnessSet(brightness: f32) -> u8;
-}
+/// A trait for controlling the display.
+pub trait DisplayController {
+    /// The state of the display.
+    type State;
 
-pub fn brightness_get() -> f32 {
-    unsafe { BrightnessGet() }
-}
+    /// The error type of the display controller operations.
+    type Error;
 
-pub fn brightness_set(brightness: f32) -> bool {
-    unsafe { c_bool(BrightnessSet(brightness)) }
-}
+    /// Returns `true` if the display is currently disabled.
+    fn is_disabled(&self) -> bool;
 
-fn c_bool(value: u8) -> bool {
-    value != 0
+    /// Disables the display.
+    fn disable(&self) -> Result<(), Self::Error>;
+
+    /// Returns the current state of the display.
+    fn get_state(&self) -> Option<Self::State>;
+
+    /// Restores the display to the given state.
+    fn restore_state(&self, state: Self::State) -> Result<(), Self::Error>;
 }

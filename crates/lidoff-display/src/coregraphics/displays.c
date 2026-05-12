@@ -1,11 +1,11 @@
-#include "external_display.h"
+#include "displays.h"
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <limits.h>
 
-uint8_t ExternalDisplayGetOnlineDisplays(CGDirectDisplayID *display_ids,
-                                         size_t capacity,
-                                         size_t *count_out) {
+uint8_t DisplaysListOnline(CGDirectDisplayID *display_ids,
+                           size_t capacity,
+                           size_t *count_out) {
     if (count_out == NULL) {
         return 0;
     }
@@ -17,6 +17,6 @@ uint8_t ExternalDisplayGetOnlineDisplays(CGDirectDisplayID *display_ids,
     return err == kCGErrorSuccess ? 1 : 0;
 }
 
-uint8_t ExternalDisplayIsBuiltin(CGDirectDisplayID display_id) {
+uint8_t DisplayIsBuiltin(CGDirectDisplayID display_id) {
     return CGDisplayIsBuiltin(display_id) ? 1 : 0;
 }

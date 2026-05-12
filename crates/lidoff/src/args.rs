@@ -100,7 +100,7 @@ where
 
 #[allow(clippy::print_stdout)]
 pub(crate) fn print_usage(program_name: &str) {
-    println!("lidoff - MacBook lid angle brightness daemon\n");
+    println!("lidoff - MacBook lid angle display and keyboard brightness daemon\n");
     println!("Usage:");
     println!("  {program_name} [-t threshold] [-i interval]  Run daemon");
     println!("  {program_name} --enable [-t threshold]      Install as LaunchAgent");
@@ -117,10 +117,10 @@ pub(crate) fn print_usage(program_name: &str) {
     println!("  -v, --verbose               Log current lid angle\n");
     println!("Behavior:");
     println!(
-        "  angle < {MONITOR_FULL_CLOSE_ANGLE}: fully closed, restore brightness and end caffeinate"
+        "  angle < {MONITOR_FULL_CLOSE_ANGLE}: fully closed, restore brightness values and end caffeinate"
     );
-    println!("  angle < threshold: save brightness, set to 0, start caffeinate");
-    println!("  angle >= threshold: restore saved brightness, end caffeinate");
+    println!("  angle < threshold: save brightness values, set them to 0, start caffeinate");
+    println!("  angle >= threshold: restore saved brightness values, end caffeinate");
 }
 
 #[cfg(test)]

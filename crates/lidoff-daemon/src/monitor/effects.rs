@@ -2,7 +2,8 @@ use std::path::Path;
 
 use lidoff_display::{
     DisplayController, ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplays,
-    InternalDisplay, InternalDisplayError, InternalDisplayState,
+    InternalDisplay, InternalDisplayError, InternalDisplayState, KeyboardBacklight,
+    KeyboardBacklightError, KeyboardBacklightState,
 };
 use lidoff_power::{CaffeinateError, caffeinate_start, caffeinate_stop};
 
@@ -40,6 +41,7 @@ pub(super) fn restore_display_state(
     clear_internal_after_restore: bool,
 ) {
     restore_external_display_state(shared_state);
+    restore_keyboard_backlight_state(shared_state, log_restore, true);
     restore_internal_display_state(shared_state, log_restore, clear_internal_after_restore);
     stop_caffeinate(shared_state);
 }
@@ -48,6 +50,7 @@ pub(super) fn prepare_display_state_for_sleep(
     shared_state: &SharedMonitorState,
     log_restore: bool,
 ) {
+    restore_keyboard_backlight_state(shared_state, log_restore, false);
     apply_internal_display_state(
         shared_state,
         false,
@@ -56,6 +59,34 @@ pub(super) fn prepare_display_state_for_sleep(
         "failed to prepare brightness before sleep",
     );
     stop_caffeinate(shared_state);
+}
+
+fn restore_keyboard_backlight_state(
+    shared_state: &SharedMonitorState,
+    log_restore: bool,
+    clear_after_restore: bool,
+) -> bool {
+    let Some(saved_state) = lock_state(shared_state).keyboard_backlight_state else {
+        return false;
+    };
+
+    if log_restore {
+        logging::info!("restoring keyboard backlight to {:.2}", saved_state.brightness);
+    }
+
+    let keyboard = KeyboardBacklight;
+    if keyboard.restore_state(saved_state).is_ok() {
+        let mut state = lock_state(shared_state);
+        if state.keyboard_backlight_state == Some(saved_state) && clear_after_restore {
+            state.keyboard_backlight_state = None;
+        }
+        true
+    } else {
+        if log_restore {
+            logging::error!("failed to restore keyboard backlight");
+        }
+        false
+    }
 }
 
 fn start_caffeinate(shared_state: &SharedMonitorState) -> bool {
@@ -224,6 +255,10 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
         changed = true;
     }
 
+    if disable_keyboard_backlight(shared_state) {
+        changed = true;
+    }
+
     let external = ExternalDisplays;
     if lock_state(shared_state).external_display_state.is_none()
         && !external.is_disabled()
@@ -267,6 +302,8 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
 
     logging::info!("dimming display to 0.0");
 
+    capture_and_disable_keyboard_backlight_state(shared_state);
+
     capture_and_disable_external_display_state(shared_state);
     start_caffeinate(shared_state);
     persist_recovery_state(shared_state, recovery_cache_dir);
@@ -276,6 +313,42 @@ fn clear_pending_display_state(shared_state: &SharedMonitorState) {
     let mut state = lock_state(shared_state);
     state.internal_display_state = None;
     state.external_display_state = None;
+    state.keyboard_backlight_state = None;
+}
+
+fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorState) -> bool {
+    let keyboard = KeyboardBacklight;
+    if lock_state(shared_state).keyboard_backlight_state.is_none() {
+        let Some(current_state) = keyboard.get_state() else {
+            logging::error!("failed to read keyboard backlight");
+            return false;
+        };
+
+        let mut state = lock_state(shared_state);
+        if state.keyboard_backlight_state.is_none() {
+            state.keyboard_backlight_state =
+                Some(KeyboardBacklightState { brightness: current_state.brightness });
+        }
+    }
+
+    disable_keyboard_backlight(shared_state)
+}
+
+fn disable_keyboard_backlight(shared_state: &SharedMonitorState) -> bool {
+    let keyboard = KeyboardBacklight;
+    match keyboard.disable() {
+        Ok(()) => {
+            logging::info!("dimming keyboard backlight to 0.0");
+            true
+        }
+        Err(KeyboardBacklightError::AlreadyDisabled) => false,
+        Err(error) => {
+            logging::error!("failed to dim keyboard backlight: {error}");
+            let mut state = lock_state(shared_state);
+            state.keyboard_backlight_state = None;
+            false
+        }
+    }
 }
 
 fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32) -> f32 {

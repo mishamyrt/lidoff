@@ -11,14 +11,16 @@ fn main() {
     let sdk_root = xcrun_sdk_root();
 
     let native_sources = [
-        manifest_dir.join("src/coregraphics/brightness.c"),
-        manifest_dir.join("src/coregraphics/displays.c"),
-        manifest_dir.join("src/coregraphics/skylight.c"),
+        manifest_dir.join("src/shim/brightness.c"),
+        manifest_dir.join("src/shim/displays.c"),
+        manifest_dir.join("src/shim/keyboard_backlight.c"),
+        manifest_dir.join("src/shim/skylight.c"),
     ];
     let native_headers = [
-        manifest_dir.join("src/coregraphics/brightness.h"),
-        manifest_dir.join("src/coregraphics/displays.h"),
-        manifest_dir.join("src/coregraphics/skylight.h"),
+        manifest_dir.join("src/shim/brightness.h"),
+        manifest_dir.join("src/shim/displays.h"),
+        manifest_dir.join("src/shim/keyboard_backlight.h"),
+        manifest_dir.join("src/shim/skylight.h"),
     ];
 
     for source in &native_sources {
@@ -51,6 +53,7 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=CoreFoundation");
     println!("cargo:rustc-link-lib=framework=CoreGraphics");
     println!("cargo:rustc-link-lib=framework=IOKit");
+    println!("cargo:rustc-link-lib=objc");
 }
 
 fn xcrun_sdk_root() -> String {

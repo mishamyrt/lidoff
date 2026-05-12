@@ -47,7 +47,7 @@ pub(super) fn handle_partially_closed_locked(
         return MonitorAction::None;
     }
 
-    if state.internal_display_state.is_some() {
+    if state.internal_display_state.is_some() || state.keyboard_backlight_state.is_some() {
         state.below_threshold_streak = 0;
         return MonitorAction::ResumePartialDim;
     }
@@ -149,6 +149,7 @@ fn maybe_start_open_restore_hold(
 fn should_restore_on_open(state: &MonitorState) -> bool {
     state.internal_display_state.is_some()
         || state.external_display_state.is_some()
+        || state.keyboard_backlight_state.is_some()
         || state.caffeinate_active
 }
 
@@ -161,7 +162,7 @@ mod tests {
         should_restore_on_open,
     };
     use crate::monitor::{MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE};
-    use lidoff_display::InternalDisplayState;
+    use lidoff_display::{InternalDisplayState, KeyboardBacklightState};
     use std::time::{Duration, Instant};
 
     use super::super::state::{LidState, MonitorState};
@@ -193,6 +194,14 @@ mod tests {
     fn open_with_pending_state_requires_restore() {
         let mut state = MonitorState::new();
         state.internal_display_state = Some(InternalDisplayState { brightness: 0.42 });
+
+        assert!(should_restore_on_open(&state));
+    }
+
+    #[test]
+    fn open_with_pending_keyboard_backlight_requires_restore() {
+        let mut state = MonitorState::new();
+        state.keyboard_backlight_state = Some(KeyboardBacklightState { brightness: 0.42 });
 
         assert!(should_restore_on_open(&state));
     }

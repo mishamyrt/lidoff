@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::{
     DisplayController,
-    coregraphics::{
+    shim::{
         capture_skylight_display, clear_skylight_backups, copy_skylight_state,
         disable_skylight_display, finalize_skylight, is_builtin, online_displays,
         prepare_skylight, restore_skylight_state,

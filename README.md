@@ -4,8 +4,8 @@
 
 [![](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg)](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml)
 
-Rust daemon with a minimal native C shim that turns off MacBook display brightness and
-enables caffeinate when the lid is partially closed.
+Rust daemon with a minimal native C shim that turns off MacBook display and keyboard
+brightness and enables caffeinate when the lid is partially closed.
 
 ## What for?
 
@@ -69,11 +69,11 @@ lidoff --disable                   Remove LaunchAgent
 
 ## How it works
 
-The daemon monitors lid angle and manages display brightness with caffeinate session:
+The daemon monitors lid angle and manages display and keyboard brightness with caffeinate session:
 
-- **Lid partially closed** (angle < threshold, but ≥ 10°): saves current brightness, sets it to 0, starts a caffeinate session to prevent sleep, and disables external displays
-- **Lid opened** (angle ≥ threshold): restores saved brightness, restores external display state, and ends caffeinate session
-- **Lid fully closed** (angle < 10°): restores brightness, restores external display state, and ends caffeinate session, allowing normal sleep behavior
+- **Lid partially closed** (angle < threshold, but ≥ 5°): saves current display and keyboard brightness, sets both to 0, starts a caffeinate session to prevent sleep, and disables external displays
+- **Lid opened** (angle ≥ threshold): restores saved brightness values, restores external display state, and ends caffeinate session
+- **Lid fully closed** (angle < 5°): restores brightness values, restores external display state, and ends caffeinate session, allowing normal sleep behavior
 
 External display shutdown tries two methods in priority order:
 

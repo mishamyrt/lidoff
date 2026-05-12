@@ -2,24 +2,35 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use lidoff_display::{ExternalDisplayState, InternalDisplayState};
+use lidoff_display::{ExternalDisplayState, InternalDisplayState, KeyboardBacklightState};
 use serde::{Deserialize, Serialize};
 
 use crate::logging;
 
-const RECOVERY_STATE_VERSION: u8 = 2;
+const RECOVERY_STATE_VERSION: u8 = 3;
+const PRE_KEYBOARD_BACKLIGHT_RECOVERY_STATE_VERSION: u8 = 2;
 const LEGACY_RECOVERY_STATE_VERSION: u8 = 1;
 const RECOVERY_STATE_FILE: &str = "state.bin";
 const LEGACY_RECOVERY_STATE_FILE: &str = "state.plist";
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct RecoveryStateData {
     pub internal_display_state: Option<InternalDisplayState>,
     pub external_display_state: Option<ExternalDisplayState>,
+    pub keyboard_backlight_state: Option<KeyboardBacklightState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct PersistedState {
+    version: u8,
+    internal_display_state: Option<InternalDisplayState>,
+    external_display_state: Option<ExternalDisplayState>,
+    keyboard_backlight_state: Option<KeyboardBacklightState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct PreKeyboardBacklightPersistedState {
     version: u8,
     internal_display_state: Option<InternalDisplayState>,
     external_display_state: Option<ExternalDisplayState>,
@@ -96,6 +107,7 @@ fn encode_state(recovery_state: &RecoveryStateData) -> bincode::Result<Vec<u8>> 
         version: RECOVERY_STATE_VERSION,
         internal_display_state: recovery_state.internal_display_state,
         external_display_state: recovery_state.external_display_state.clone(),
+        keyboard_backlight_state: recovery_state.keyboard_backlight_state,
     })
 }
 
@@ -110,6 +122,15 @@ fn decode_state(bytes: &[u8]) -> bincode::Result<RecoveryStateData> {
             Ok(RecoveryStateData {
                 internal_display_state: state.internal_display_state,
                 external_display_state: state.external_display_state,
+                keyboard_backlight_state: state.keyboard_backlight_state,
+            })
+        }
+        PRE_KEYBOARD_BACKLIGHT_RECOVERY_STATE_VERSION => {
+            let state: PreKeyboardBacklightPersistedState = bincode::deserialize(bytes)?;
+            Ok(RecoveryStateData {
+                internal_display_state: state.internal_display_state,
+                external_display_state: state.external_display_state,
+                keyboard_backlight_state: None,
             })
         }
         LEGACY_RECOVERY_STATE_VERSION => {
@@ -129,6 +150,7 @@ fn decode_state(bytes: &[u8]) -> bincode::Result<RecoveryStateData> {
                 } else {
                     None
                 },
+                keyboard_backlight_state: None,
             })
         }
         _ => Err(Box::new(bincode::ErrorKind::Custom(format!(
@@ -167,7 +189,7 @@ mod tests {
         RecoveryStateData, cleanup_legacy_recovery_file_at, decode_state, encode_state,
         legacy_recovery_state_path, load_at_cache_dir, save_at_cache_dir,
     };
-    use lidoff_display::{ExternalDisplayState, InternalDisplayState};
+    use lidoff_display::{ExternalDisplayState, InternalDisplayState, KeyboardBacklightState};
 
     struct TestDir {
         path: PathBuf,
@@ -200,6 +222,7 @@ mod tests {
             external_display_state: Some(ExternalDisplayState {
                 skylight_display_ids: vec![2, 5],
             }),
+            keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.65 }),
         };
 
         let encoded = encode_state(&recovery_state).unwrap();
@@ -228,6 +251,7 @@ mod tests {
             external_display_state: Some(ExternalDisplayState {
                 skylight_display_ids: vec![11],
             }),
+            keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.84 }),
         };
 
         save_at_cache_dir(temp.path(), &recovery_state).unwrap();
@@ -258,6 +282,32 @@ mod tests {
                 external_display_state: Some(ExternalDisplayState {
                     skylight_display_ids: vec![17],
                 }),
+                keyboard_backlight_state: None,
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_v2_state_decodes_without_keyboard_backlight_state() {
+        let encoded = bincode::serialize(&super::PreKeyboardBacklightPersistedState {
+            version: super::PRE_KEYBOARD_BACKLIGHT_RECOVERY_STATE_VERSION,
+            internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
+            external_display_state: Some(ExternalDisplayState {
+                skylight_display_ids: vec![17],
+            }),
+        })
+        .unwrap();
+
+        let decoded = decode_state(&encoded).unwrap();
+
+        assert_eq!(
+            decoded,
+            RecoveryStateData {
+                internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
+                external_display_state: Some(ExternalDisplayState {
+                    skylight_display_ids: vec![17],
+                }),
+                keyboard_backlight_state: None,
             }
         );
     }

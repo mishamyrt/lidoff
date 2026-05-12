@@ -5,6 +5,8 @@ use smallvec::SmallVec;
 unsafe extern "C" {
     fn BrightnessGet() -> f32;
     fn BrightnessSet(brightness: f32) -> u8;
+    fn KeyboardBacklightGet() -> f32;
+    fn KeyboardBacklightSet(brightness: f32) -> u8;
 }
 
 /// Returns the current internal display brightness level.
@@ -15,6 +17,16 @@ pub(crate) fn brightness_get() -> f32 {
 /// Sets the internal display brightness level.
 pub(crate) fn brightness_set(brightness: f32) -> bool {
     unsafe { BrightnessSet(brightness) != 0 }
+}
+
+/// Returns the current keyboard backlight brightness level.
+pub(crate) fn keyboard_backlight_get() -> f32 {
+    unsafe { KeyboardBacklightGet() }
+}
+
+/// Sets the keyboard backlight brightness level.
+pub(crate) fn keyboard_backlight_set(brightness: f32) -> bool {
+    unsafe { KeyboardBacklightSet(brightness) != 0 }
 }
 
 /* Displays */

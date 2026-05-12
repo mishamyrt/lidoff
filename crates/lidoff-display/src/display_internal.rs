@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     DisplayController,
-    coregraphics::{brightness_get, brightness_set},
+    shim::{brightness_get, brightness_set},
 };
 
 #[derive(Debug, Clone, Copy, Default)]

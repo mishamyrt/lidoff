@@ -22,6 +22,13 @@ pub struct ExternalDisplayState {
     pub skylight_display_ids: Vec<u32>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExternalDisplayDisableResult {
+    pub state: ExternalDisplayState,
+    pub disabled: usize,
+    pub failed: usize,
+}
+
 #[derive(Error, Debug)]
 pub enum ExternalDisplayError {
     #[error("already disabled")]
@@ -67,15 +74,7 @@ impl DisplayController for ExternalDisplays {
             return Err(ExternalDisplayError::SkylightPrepareFailed);
         }
 
-        let mut disabled = 0;
-        let mut failed = 0;
-        for display_id in external_display_ids(&displays) {
-            if disable_skylight_display(display_id) {
-                disabled += 1;
-            } else {
-                failed += 1;
-            }
-        }
+        let (disabled, failed) = disable_external_displays(&displays);
 
         finalize_skylight();
         EXTERNAL_DISPLAYS_DISABLED.store(disabled > 0, Ordering::Relaxed);
@@ -113,6 +112,33 @@ impl DisplayController for ExternalDisplays {
     }
 }
 
+impl ExternalDisplays {
+    pub fn capture_and_disable(
+        &self,
+    ) -> Result<ExternalDisplayDisableResult, ExternalDisplayError> {
+        if self.is_disabled() {
+            return Err(ExternalDisplayError::AlreadyDisabled);
+        }
+
+        let displays =
+            online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
+
+        if !prepare_skylight(displays.len()) {
+            clear_skylight_backups();
+            return Err(ExternalDisplayError::SkylightPrepareFailed);
+        }
+
+        let (state, failed) = capture_disabled_external_displays(&displays);
+        let disabled = state.skylight_display_ids.len();
+
+        clear_skylight_backups();
+        finalize_skylight();
+        EXTERNAL_DISPLAYS_DISABLED.store(disabled > 0, Ordering::Relaxed);
+
+        Ok(ExternalDisplayDisableResult { state, disabled, failed })
+    }
+}
+
 fn copy_state_with_displays(
     displays: &[u32],
 ) -> Result<ExternalDisplayState, ExternalDisplayError> {
@@ -136,6 +162,34 @@ fn copy_state_with_displays(
     clear_skylight_backups();
     finalize_skylight();
     state
+}
+
+fn disable_external_displays(displays: &[u32]) -> (usize, usize) {
+    let mut disabled = 0;
+    let mut failed = 0;
+    for display_id in external_display_ids(displays) {
+        if disable_skylight_display(display_id) {
+            disabled += 1;
+        } else {
+            failed += 1;
+        }
+    }
+
+    (disabled, failed)
+}
+
+fn capture_disabled_external_displays(displays: &[u32]) -> (ExternalDisplayState, usize) {
+    let mut skylight_display_ids = Vec::new();
+    let mut failed = 0;
+    for display_id in external_display_ids(displays) {
+        if disable_skylight_display(display_id) {
+            skylight_display_ids.push(display_id);
+        } else {
+            failed += 1;
+        }
+    }
+
+    (ExternalDisplayState { skylight_display_ids }, failed)
 }
 
 fn external_display_ids(displays: &[u32]) -> impl Iterator<Item = u32> + '_ {

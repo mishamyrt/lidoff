@@ -2,7 +2,9 @@ mod coregraphics;
 mod display_external;
 mod display_internal;
 
-pub use display_external::{ExternalDisplayError, ExternalDisplayState, ExternalDisplays};
+pub use display_external::{
+    ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplayState, ExternalDisplays,
+};
 pub use display_internal::{InternalDisplay, InternalDisplayError, InternalDisplayState};
 
 /// A trait for controlling the display.

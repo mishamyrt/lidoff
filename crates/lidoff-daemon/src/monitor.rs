@@ -4,8 +4,9 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use lidoff_display::{
-    DisplayController, ExternalDisplayError, ExternalDisplayState, ExternalDisplays,
-    InternalDisplay, InternalDisplayError, InternalDisplayState,
+    DisplayController, ExternalDisplayDisableResult, ExternalDisplayError,
+    ExternalDisplayState, ExternalDisplays, InternalDisplay, InternalDisplayError,
+    InternalDisplayState,
 };
 use lidoff_power::{CaffeinateError, PowerObserver, caffeinate_start, caffeinate_stop};
 
@@ -346,15 +347,34 @@ fn capture_and_disable_external_display_state(
 ) -> bool {
     let external = ExternalDisplays;
     if lock_state(shared_state).external_display_state.is_none() {
-        let Some(saved_state) = external.get_state() else {
-            logging::error!("failed to capture external display state");
-            return false;
+        let disable_result = match external.capture_and_disable() {
+            Ok(result) => result,
+            Err(ExternalDisplayError::AlreadyDisabled) => return true,
+            Err(error) => {
+                logging::error!("external display disable failed: {error}");
+                return false;
+            }
         };
 
-        let mut state = lock_state(shared_state);
-        if state.external_display_state.is_none() {
-            state.external_display_state = Some(saved_state);
+        let ExternalDisplayDisableResult { state: saved_state, disabled, failed } =
+            disable_result;
+
+        {
+            let mut state = lock_state(shared_state);
+            if state.external_display_state.is_none() {
+                state.external_display_state = Some(saved_state);
+            }
         }
+
+        if failed > 0 {
+            logging::error!(
+                "external display disable failed: {}",
+                ExternalDisplayError::DisableFailed { disabled, failed }
+            );
+            return false;
+        }
+
+        return true;
     }
 
     match external.disable() {

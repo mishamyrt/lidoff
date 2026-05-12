@@ -1,4 +1,8 @@
-use std::{ffi::c_void, thread};
+use std::{
+    ffi::c_void,
+    sync::mpsc::{self, SyncSender},
+    thread::{self, JoinHandle},
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -15,8 +19,12 @@ pub enum CaffeinateError {
 
 #[derive(Error, Debug)]
 pub enum PowerNotifierError {
-    #[error("failed to start power notifier")]
+    #[error("failed to spawn power notifier")]
     StartFailed(#[from] std::io::Error),
+    #[error("failed to register power notifier")]
+    RegisterFailed,
+    #[error("failed to receive power notifier startup status")]
+    StartupStatusFailed,
 }
 
 unsafe extern "C" {
@@ -27,6 +35,8 @@ unsafe extern "C" {
         will_sleep: extern "C" fn(*mut c_void),
         did_wake: extern "C" fn(*mut c_void),
         context: *mut c_void,
+        startup_callback: extern "C" fn(u8, *mut c_void),
+        startup_context: *mut c_void,
     ) -> u8;
 }
 
@@ -48,6 +58,7 @@ pub fn caffeinate_stop() -> Result<(), CaffeinateError> {
 
 pub struct PowerObserver {
     context: *mut c_void,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl Default for PowerObserver {
@@ -58,7 +69,7 @@ impl Default for PowerObserver {
 
 impl PowerObserver {
     pub fn new() -> Self {
-        Self { context: std::ptr::null_mut() }
+        Self { context: std::ptr::null_mut(), thread: None }
     }
 
     pub fn start(
@@ -67,15 +78,37 @@ impl PowerObserver {
         did_wake: extern "C" fn(*mut c_void),
     ) -> Result<(), PowerNotifierError> {
         let context = self.context as usize;
-        thread::Builder::new()
-            .name("lidoff.power".to_owned())
-            .spawn(move || unsafe {
-                if PowerObserverRunLoop(will_sleep, did_wake, context as *mut c_void) != 0 {
-                    return Err(PowerNotifierError::StartFailed);
+        let (startup_tx, startup_rx) = mpsc::sync_channel::<u8>(1);
+        let thread =
+            thread::Builder::new().name("lidoff.power".to_owned()).spawn(move || {
+                let startup_context = (&raw const startup_tx).cast_mut().cast::<c_void>();
+                unsafe {
+                    PowerObserverRunLoop(
+                        will_sleep,
+                        did_wake,
+                        context as *mut c_void,
+                        handle_power_observer_startup,
+                        startup_context,
+                    );
                 }
-                Ok(())
-            })
-            .map_err(PowerNotifierError::StartFailed)
-            .map(|_| ())
+            })?;
+
+        if startup_rx.recv().map_err(|_| PowerNotifierError::StartupStatusFailed)? != 0 {
+            return Err(PowerNotifierError::RegisterFailed);
+        }
+
+        self.thread = Some(thread);
+        Ok(())
     }
+}
+
+impl Drop for PowerObserver {
+    fn drop(&mut self) {
+        drop(self.thread.take());
+    }
+}
+
+extern "C" fn handle_power_observer_startup(status: u8, context: *mut c_void) {
+    let startup_tx = unsafe { &*context.cast::<SyncSender<u8>>() };
+    let _ = startup_tx.send(status);
 }

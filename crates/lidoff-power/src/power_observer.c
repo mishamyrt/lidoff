@@ -68,7 +68,9 @@ static void powerCallback(void *ref_con,
 
 uint8_t PowerObserverRunLoop(PowerObserverCallback will_sleep,
                              PowerObserverCallback did_wake,
-                             void *context) {
+                             void *context,
+                             PowerObserverStartupCallback startup_callback,
+                             void *startup_context) {
     observer_context.will_sleep = will_sleep;
     observer_context.did_wake = did_wake;
     observer_context.context = context;
@@ -77,12 +79,14 @@ uint8_t PowerObserverRunLoop(PowerObserverCallback will_sleep,
         IORegisterForSystemPower(NULL, &power_notify_port, powerCallback, &power_notifier);
     if (power_root_port == 0 || power_notify_port == NULL) {
         cleanupPowerNotifications();
+        startup_callback(POWER_NOTIFIER_STATUS_FAILURE, startup_context);
         return POWER_NOTIFIER_STATUS_FAILURE;
     }
 
     CFRunLoopAddSource(CFRunLoopGetCurrent(),
                        IONotificationPortGetRunLoopSource(power_notify_port),
                        kCFRunLoopCommonModes);
+    startup_callback(POWER_NOTIFIER_STATUS_SUCCESS, startup_context);
     CFRunLoopRun();
     cleanupPowerNotifications();
     return POWER_NOTIFIER_STATUS_SUCCESS;

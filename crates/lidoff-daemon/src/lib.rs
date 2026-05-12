@@ -3,6 +3,7 @@ mod monitor;
 mod recovery_state;
 
 use std::ffi::c_int;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use monitor::{
@@ -20,11 +21,12 @@ unsafe extern "C" {
     fn signal(signum: c_int, handler: extern "C" fn(c_int)) -> usize;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct DaemonConfig {
     pub threshold: u32,
     pub interval_ms: u64,
     pub verbose: bool,
+    pub recovery_cache_dir: PathBuf,
 }
 
 pub fn run(config: &DaemonConfig) -> bool {
@@ -39,6 +41,7 @@ pub fn run(config: &DaemonConfig) -> bool {
     let monitor_config = monitor::MonitorConfig {
         threshold: config.threshold,
         interval_ms: config.interval_ms,
+        recovery_cache_dir: config.recovery_cache_dir.clone(),
     };
     monitor::run(&monitor_config, &SHOULD_RUN);
     lidoff_lidsensor::close();

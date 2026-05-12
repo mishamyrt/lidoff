@@ -9,7 +9,6 @@ use crate::logging;
 
 const RECOVERY_STATE_VERSION: u8 = 2;
 const LEGACY_RECOVERY_STATE_VERSION: u8 = 1;
-const RECOVERY_CACHE_DIR: &str = "Library/Caches/co.myrt.lidoff";
 const RECOVERY_STATE_FILE: &str = "state.bin";
 const LEGACY_RECOVERY_STATE_FILE: &str = "state.plist";
 
@@ -40,13 +39,12 @@ struct LegacyPersistedState {
     external_state: Option<ExternalDisplayState>,
 }
 
-pub(crate) fn load() -> Option<RecoveryStateData> {
-    let home = current_home_dir()?;
-    if let Err(error) = cleanup_legacy_recovery_file_at(&home) {
+pub(crate) fn load(recovery_cache_dir: &Path) -> Option<RecoveryStateData> {
+    if let Err(error) = cleanup_legacy_recovery_file_at(recovery_cache_dir) {
         logging::error!("failed to remove legacy recovery state: {error}");
     }
 
-    match load_at_home(&home) {
+    match load_at_cache_dir(recovery_cache_dir) {
         Ok(Some(state)) => Some(state),
         Ok(None) => None,
         Err(error) => {
@@ -56,29 +54,17 @@ pub(crate) fn load() -> Option<RecoveryStateData> {
     }
 }
 
-pub(crate) fn save(recovery_state: &RecoveryStateData) -> bool {
-    let Some(home) = current_home_dir() else {
-        return false;
-    };
-
-    save_at_home(&home, recovery_state).is_ok()
+pub(crate) fn save(recovery_cache_dir: &Path, recovery_state: &RecoveryStateData) -> bool {
+    save_at_cache_dir(recovery_cache_dir, recovery_state).is_ok()
 }
 
-pub(crate) fn clear() {
-    let Some(home) = current_home_dir() else {
-        return;
-    };
-
-    let path = recovery_state_path(&home);
+pub(crate) fn clear(recovery_cache_dir: &Path) {
+    let path = recovery_state_path(recovery_cache_dir);
     let _ = fs::remove_file(path);
 }
 
-fn current_home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-fn load_at_home(home: &Path) -> io::Result<Option<RecoveryStateData>> {
-    let path = recovery_state_path(home);
+fn load_at_cache_dir(recovery_cache_dir: &Path) -> io::Result<Option<RecoveryStateData>> {
+    let path = recovery_state_path(recovery_cache_dir);
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -91,8 +77,11 @@ fn load_at_home(home: &Path) -> io::Result<Option<RecoveryStateData>> {
     }
 }
 
-fn save_at_home(home: &Path, recovery_state: &RecoveryStateData) -> io::Result<()> {
-    let path = recovery_state_path(home);
+fn save_at_cache_dir(
+    recovery_cache_dir: &Path,
+    recovery_state: &RecoveryStateData,
+) -> io::Result<()> {
+    let path = recovery_state_path(recovery_cache_dir);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -148,8 +137,8 @@ fn decode_state(bytes: &[u8]) -> bincode::Result<RecoveryStateData> {
     }
 }
 
-fn cleanup_legacy_recovery_file_at(home: &Path) -> io::Result<()> {
-    let path = legacy_recovery_state_path(home);
+fn cleanup_legacy_recovery_file_at(recovery_cache_dir: &Path) -> io::Result<()> {
+    let path = legacy_recovery_state_path(recovery_cache_dir);
     if !path.exists() {
         return Ok(());
     }
@@ -158,16 +147,12 @@ fn cleanup_legacy_recovery_file_at(home: &Path) -> io::Result<()> {
     fs::remove_file(path)
 }
 
-fn recovery_state_dir(home: &Path) -> PathBuf {
-    home.join(RECOVERY_CACHE_DIR)
+fn recovery_state_path(recovery_cache_dir: &Path) -> PathBuf {
+    recovery_cache_dir.join(RECOVERY_STATE_FILE)
 }
 
-fn recovery_state_path(home: &Path) -> PathBuf {
-    recovery_state_dir(home).join(RECOVERY_STATE_FILE)
-}
-
-fn legacy_recovery_state_path(home: &Path) -> PathBuf {
-    recovery_state_dir(home).join(LEGACY_RECOVERY_STATE_FILE)
+fn legacy_recovery_state_path(recovery_cache_dir: &Path) -> PathBuf {
+    recovery_cache_dir.join(LEGACY_RECOVERY_STATE_FILE)
 }
 
 #[cfg(test)]
@@ -180,7 +165,7 @@ mod tests {
 
     use super::{
         RecoveryStateData, cleanup_legacy_recovery_file_at, decode_state, encode_state,
-        legacy_recovery_state_path, load_at_home, save_at_home,
+        legacy_recovery_state_path, load_at_cache_dir, save_at_cache_dir,
     };
     use lidoff_display::{ExternalDisplayState, InternalDisplayState};
 
@@ -245,8 +230,8 @@ mod tests {
             }),
         };
 
-        save_at_home(temp.path(), &recovery_state).unwrap();
-        let loaded = load_at_home(temp.path()).unwrap().unwrap();
+        save_at_cache_dir(temp.path(), &recovery_state).unwrap();
+        let loaded = load_at_cache_dir(temp.path()).unwrap().unwrap();
 
         assert_eq!(loaded, recovery_state);
     }

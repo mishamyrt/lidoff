@@ -4,6 +4,7 @@ mod power_events;
 mod state;
 mod transitions;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,7 +14,7 @@ use lidoff_power::PowerObserver;
 
 use self::effects::{execute_monitor_action, restore_display_state};
 use self::persistence::{persist_recovery_state, recover_state_if_needed};
-use self::power_events::{handle_did_wake, handle_will_sleep, set_shared_state};
+use self::power_events::{handle_did_wake, handle_will_sleep, set_power_state};
 use self::state::{MonitorAction, MonitorState, lock_state};
 use self::transitions::{
     handle_fully_closed_locked, handle_open_locked, handle_partially_closed_locked,
@@ -31,17 +32,18 @@ const MONITOR_POST_OPEN_GRACE_SECONDS: f64 = 1.0;
 const MONITOR_POST_OPEN_RESTORE_SECONDS: f64 = 2.0;
 const MONITOR_POST_WAKE_GRACE_SECONDS: f64 = 1.0;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct MonitorConfig {
     pub threshold: u32,
     pub interval_ms: u64,
+    pub recovery_cache_dir: PathBuf,
 }
 
 pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
-    set_shared_state(shared_state.clone());
+    set_power_state(shared_state.clone(), config.recovery_cache_dir.clone());
 
-    recover_state_if_needed(&shared_state);
+    recover_state_if_needed(&shared_state, &config.recovery_cache_dir);
 
     let mut observer = PowerObserver::new();
     if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
@@ -87,11 +89,11 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
                 action
             }
         };
-        execute_monitor_action(&shared_state, action);
+        execute_monitor_action(&shared_state, action, &config.recovery_cache_dir);
 
         thread::sleep(interval);
     }
 
     restore_display_state(&shared_state, false, true);
-    persist_recovery_state(&shared_state);
+    persist_recovery_state(&shared_state, &config.recovery_cache_dir);
 }

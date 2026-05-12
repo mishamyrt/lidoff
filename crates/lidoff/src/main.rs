@@ -2,6 +2,9 @@ mod args;
 mod launch_agent;
 
 use args::{parse, print_usage};
+use std::path::PathBuf;
+
+const CACHE_RELATIVE_PATH: &str = "Library/Caches/co.myrt.lidoff";
 
 fn main() {
     let exit_code = run();
@@ -44,11 +47,27 @@ fn run() -> i32 {
         return i32::from(launch_agent::install(parsed.threshold));
     }
 
+    let recovery_cache_dir = match recovery_cache_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("lidoff: {error}");
+            return 1;
+        }
+    };
+
     let config = lidoff_daemon::DaemonConfig {
         threshold: parsed.threshold,
         interval_ms: parsed.interval_ms,
         verbose: parsed.verbose,
+        recovery_cache_dir,
     };
 
     i32::from(lidoff_daemon::run(&config))
+}
+
+fn recovery_cache_dir() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set".to_owned())?;
+    Ok(home.join(CACHE_RELATIVE_PATH))
 }

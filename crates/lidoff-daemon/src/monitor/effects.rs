@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use lidoff_display::{
     DisplayController, ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplays,
     InternalDisplay, InternalDisplayError, InternalDisplayState,
@@ -11,19 +13,24 @@ use crate::logging;
 pub(super) fn execute_monitor_action(
     shared_state: &SharedMonitorState,
     action: MonitorAction,
+    recovery_cache_dir: &Path,
 ) {
     match action {
         MonitorAction::None => {}
         MonitorAction::RestoreDisplayState { log_restore, clear_internal_after_restore } => {
             restore_display_state(shared_state, log_restore, clear_internal_after_restore);
-            persist_recovery_state(shared_state);
+            persist_recovery_state(shared_state, recovery_cache_dir);
         }
         MonitorAction::PrepareDisplayStateForSleep { log_restore } => {
             prepare_display_state_for_sleep(shared_state, log_restore);
-            persist_recovery_state(shared_state);
+            persist_recovery_state(shared_state, recovery_cache_dir);
         }
-        MonitorAction::ResumePartialDim => resume_partial_dim(shared_state),
-        MonitorAction::StartPartialDim => start_partial_dim(shared_state),
+        MonitorAction::ResumePartialDim => {
+            resume_partial_dim(shared_state, recovery_cache_dir);
+        }
+        MonitorAction::StartPartialDim => {
+            start_partial_dim(shared_state, recovery_cache_dir);
+        }
     }
 }
 
@@ -202,13 +209,13 @@ fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState)
     }
 }
 
-fn resume_partial_dim(shared_state: &SharedMonitorState) {
+fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
     let mut changed = false;
     let internal = InternalDisplay;
     if !internal.is_disabled() {
         if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
             clear_pending_display_state(shared_state);
-            persist_recovery_state(shared_state);
+            persist_recovery_state(shared_state, recovery_cache_dir);
             logging::error!("failed to dim display");
             return;
         }
@@ -230,11 +237,11 @@ fn resume_partial_dim(shared_state: &SharedMonitorState) {
     }
 
     if changed {
-        persist_recovery_state(shared_state);
+        persist_recovery_state(shared_state, recovery_cache_dir);
     }
 }
 
-fn start_partial_dim(shared_state: &SharedMonitorState) {
+fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
     let internal = InternalDisplay;
     let Some(current_state) = internal.get_state() else {
         logging::error!("failed to read brightness");
@@ -253,7 +260,7 @@ fn start_partial_dim(shared_state: &SharedMonitorState) {
 
     if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
         clear_pending_display_state(shared_state);
-        persist_recovery_state(shared_state);
+        persist_recovery_state(shared_state, recovery_cache_dir);
         logging::error!("failed to dim display");
         return;
     }
@@ -262,7 +269,7 @@ fn start_partial_dim(shared_state: &SharedMonitorState) {
 
     capture_and_disable_external_display_state(shared_state);
     start_caffeinate(shared_state);
-    persist_recovery_state(shared_state);
+    persist_recovery_state(shared_state, recovery_cache_dir);
 }
 
 fn clear_pending_display_state(shared_state: &SharedMonitorState) {

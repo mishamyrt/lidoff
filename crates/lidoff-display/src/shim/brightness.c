@@ -13,7 +13,7 @@ static bool display_services_loaded = false;
 static bool display_services_available = false;
 static CGDirectDisplayID cached_builtin_display_id = kCGNullDirectDisplay;
 
-static CGDirectDisplayID brightnessTargetDisplay(void) {
+static CGDirectDisplayID scanBuiltinDisplay(void) {
     CGDirectDisplayID displays[16];
     CGDisplayCount count = 0;
     if (CGGetOnlineDisplayList(16, displays, &count) == kCGErrorSuccess) {
@@ -28,13 +28,19 @@ static CGDirectDisplayID brightnessTargetDisplay(void) {
     return cached_builtin_display_id;
 }
 
-static CGDirectDisplayID resolveBuiltinDisplay(void) {
-    CGDirectDisplayID display = brightnessTargetDisplay();
-    if (display != kCGNullDirectDisplay) {
-        return display;
+static CGDirectDisplayID brightnessTargetDisplay(void) {
+    if (cached_builtin_display_id != kCGNullDirectDisplay) {
+        return cached_builtin_display_id;
     }
 
-    cached_builtin_display_id = kCGNullDirectDisplay;
+    return scanBuiltinDisplay();
+}
+
+static CGDirectDisplayID refreshBrightnessTargetDisplay(CGDirectDisplayID failed_display) {
+    if (cached_builtin_display_id == failed_display) {
+        cached_builtin_display_id = kCGNullDirectDisplay;
+    }
+
     return brightnessTargetDisplay();
 }
 
@@ -64,9 +70,16 @@ float BrightnessGet(void) {
     }
 
     float brightness = 0.0f;
-    CGDirectDisplayID display = resolveBuiltinDisplay();
+    CGDirectDisplayID display = brightnessTargetDisplay();
     if (display != kCGNullDirectDisplay && DSGetBrightness(display, &brightness) == 0) {
         return brightness;
+    }
+
+    if (display != kCGNullDirectDisplay) {
+        display = refreshBrightnessTargetDisplay(display);
+        if (display != kCGNullDirectDisplay && DSGetBrightness(display, &brightness) == 0) {
+            return brightness;
+        }
     }
 
     return -1.0f;
@@ -85,9 +98,16 @@ uint8_t BrightnessSet(float brightness) {
         brightness = 1.0f;
     }
 
-    CGDirectDisplayID display = resolveBuiltinDisplay();
+    CGDirectDisplayID display = brightnessTargetDisplay();
     if (display != kCGNullDirectDisplay && DSSetBrightness(display, brightness) == 0) {
         return 1;
+    }
+
+    if (display != kCGNullDirectDisplay) {
+        display = refreshBrightnessTargetDisplay(display);
+        if (display != kCGNullDirectDisplay && DSSetBrightness(display, brightness) == 0) {
+            return 1;
+        }
     }
 
     return 0;

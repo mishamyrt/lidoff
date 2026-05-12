@@ -1,74 +1,50 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::process::Command;
+
+use lunchd::KeepAlive;
+use lunchd::LaunchAgent;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub(crate) enum LaunchAgentError {
+    #[error("failed to resolve executable path")]
+    Resolve(#[from] io::Error),
+
+    #[error("failed to build launch agent")]
+    Build(#[from] lunchd::LaunchAgentBuilderError),
+
+    #[error("failed to install launch agent")]
+    Install(#[source] lunchd::AgentError),
+
+    #[error("failed to uninstall launch agent")]
+    Uninstall(#[source] lunchd::AgentError),
+}
 
 const LAUNCH_AGENT_LABEL: &str = "co.myrt.lidoff";
-const LAUNCH_AGENT_RELATIVE_PATH: &str = "Library/LaunchAgents/co.myrt.lidoff.plist";
 
-pub(crate) fn install(threshold: u32) -> bool {
-    match install_inner(threshold) {
-        Ok(()) => true,
-        Err(err) => {
-            error(err);
-            false
-        }
-    }
+struct AgentParams {
+    threshold: u32,
+    interval: u64,
 }
 
-pub(crate) fn uninstall() -> bool {
-    match uninstall_inner() {
-        Ok(()) => true,
-        Err(err) => {
-            error(err);
-            false
-        }
-    }
-}
+fn build_agent(params: Option<AgentParams>) -> Result<LaunchAgent, LaunchAgentError> {
+    let bin_path = resolve_executable_path()?;
+    let (threshold, interval) = match params {
+        Some(params) => (params.threshold, params.interval),
+        None => (0, 0),
+    };
+    let agent = LaunchAgent::builder(LAUNCH_AGENT_LABEL)
+        .arg(bin_path.to_string_lossy())
+        .arg("--threshold".to_string())
+        .arg(threshold.to_string())
+        .arg("--interval".to_string())
+        .arg(interval.to_string())
+        .keep_alive(KeepAlive::Always)
+        .run_at_load(true)
+        .build()?;
 
-fn install_inner(threshold: u32) -> Result<(), String> {
-    let plist_path = launch_agent_plist_path().map_err(io_error)?;
-    if let Some(parent) = plist_path.parent() {
-        fs::create_dir_all(parent).map_err(io_error)?;
-    }
-
-    let content = generate_plist_content(threshold).map_err(io_error)?;
-    fs::write(&plist_path, content).map_err(io_error)?;
-
-    let output =
-        run_launchctl(["load", plist_path.to_string_lossy().as_ref()]).map_err(io_error)?;
-    if !output.status.success() {
-        return Err(format_launchctl_error("load", &output.stderr));
-    }
-
-    info(format!("installed ({})", plist_path.display()));
-    info(format!("threshold: {threshold}°"));
-    Ok(())
-}
-
-fn uninstall_inner() -> Result<(), String> {
-    let plist_path = launch_agent_plist_path().map_err(io_error)?;
-    if !plist_path.exists() {
-        info("not installed");
-        return Ok(());
-    }
-
-    let output =
-        run_launchctl(["unload", plist_path.to_string_lossy().as_ref()]).map_err(io_error)?;
-    if !output.status.success() {
-        return Err(format_launchctl_error("unload", &output.stderr));
-    }
-
-    fs::remove_file(&plist_path).map_err(io_error)?;
-    info("uninstalled");
-    Ok(())
-}
-
-fn launch_agent_plist_path() -> io::Result<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
-    Ok(home.join(LAUNCH_AGENT_RELATIVE_PATH))
+    Ok(agent)
 }
 
 fn resolve_executable_path() -> io::Result<PathBuf> {
@@ -85,61 +61,12 @@ fn resolve_executable_path() -> io::Result<PathBuf> {
     }
 }
 
-fn generate_plist_content(threshold: u32) -> io::Result<String> {
-    let real_path = resolve_executable_path()?;
-    Ok(format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
-\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
-<plist version=\"1.0\">\n\
-<dict>\n\
-    <key>Label</key>\n\
-    <string>{LAUNCH_AGENT_LABEL}</string>\n\
-    <key>ProgramArguments</key>\n\
-    <array>\n\
-        <string>{}</string>\n\
-        <string>-t</string>\n\
-        <string>{threshold}</string>\n\
-    </array>\n\
-    <key>RunAtLoad</key>\n\
-    <true/>\n\
-    <key>KeepAlive</key>\n\
-    <true/>\n\
-    <key>StandardOutPath</key>\n\
-    <string>/tmp/lidoff.log</string>\n\
-    <key>StandardErrorPath</key>\n\
-    <string>/tmp/lidoff.err</string>\n\
-</dict>\n\
-</plist>\n",
-        real_path.display()
-    ))
+pub(crate) fn install(threshold: u32, interval: u64) -> Result<(), LaunchAgentError> {
+    let agent = build_agent(Some(AgentParams { threshold, interval }))?;
+    agent.install().map_err(LaunchAgentError::Install)
 }
 
-fn run_launchctl<'a>(
-    arguments: impl IntoIterator<Item = &'a str>,
-) -> io::Result<std::process::Output> {
-    Command::new("/bin/launchctl").args(arguments).output()
-}
-
-fn format_launchctl_error(action: &str, stderr: &[u8]) -> String {
-    let output = String::from_utf8_lossy(stderr);
-    if output.trim().is_empty() {
-        format!("launchctl {action} failed")
-    } else {
-        format!("launchctl {action} failed: {}", output.trim())
-    }
-}
-
-fn io_error(error: io::Error) -> String {
-    error.to_string()
-}
-
-#[allow(clippy::print_stdout)]
-fn info(message: impl AsRef<str>) {
-    println!("lidoff[info]: {}", message.as_ref());
-}
-
-#[allow(clippy::print_stderr)]
-fn error(message: impl AsRef<str>) {
-    eprintln!("lidoff[error]: {}", message.as_ref());
+pub(crate) fn uninstall() -> Result<(), LaunchAgentError> {
+    let agent = build_agent(None)?;
+    agent.install().map_err(LaunchAgentError::Uninstall)
 }

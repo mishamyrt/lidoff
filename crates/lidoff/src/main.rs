@@ -40,11 +40,19 @@ fn run() -> i32 {
     };
 
     if parsed.do_uninstall {
-        return i32::from(launch_agent::uninstall());
+        if let Err(error) = launch_agent::uninstall() {
+            eprintln!("failed to uninstall launch agent: {error}");
+            return 1;
+        }
+        return 0;
     }
 
     if parsed.do_install {
-        return i32::from(launch_agent::install(parsed.threshold));
+        if let Err(error) = launch_agent::install(parsed.threshold, parsed.interval_ms) {
+            eprintln!("failed to install launch agent: {error}");
+            return 1;
+        }
+        return 0;
     }
 
     let recovery_cache_dir = match recovery_cache_dir() {

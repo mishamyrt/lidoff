@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 lidoff-daemon = { workspace = true }
+lunchd = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

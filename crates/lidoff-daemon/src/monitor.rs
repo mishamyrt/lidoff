@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use lidoff_display::{
     DisplayController, ExternalDisplayDisableResult, ExternalDisplayError,
@@ -47,11 +47,11 @@ struct MonitorState {
     last_angle: Option<u32>,
     last_lid_state: Option<LidState>,
     below_threshold_streak: i32,
-    last_full_close_at: f64,
-    last_open_at: f64,
-    last_wake_at: f64,
+    last_full_close_at: Option<Instant>,
+    last_open_at: Option<Instant>,
+    last_wake_at: Option<Instant>,
     awaiting_open_after_full_close: bool,
-    keep_internal_restore_until: f64,
+    keep_internal_restore_until: Option<Instant>,
     system_sleeping: bool,
 }
 
@@ -74,11 +74,11 @@ impl MonitorState {
             last_angle: None,
             last_lid_state: None,
             below_threshold_streak: 0,
-            last_full_close_at: 0.0,
-            last_open_at: 0.0,
-            last_wake_at: 0.0,
+            last_full_close_at: None,
+            last_open_at: None,
+            last_wake_at: None,
             awaiting_open_after_full_close: false,
-            keep_internal_restore_until: 0.0,
+            keep_internal_restore_until: None,
             system_sleeping: false,
         }
     }
@@ -109,7 +109,7 @@ pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
         };
 
         logging::debug!("angle {angle}°");
-        let now = current_time_seconds();
+        let now = Instant::now();
 
         let action = {
             let mut state = lock_state(&shared_state);
@@ -388,10 +388,10 @@ fn capture_and_disable_external_display_state(
 
 fn handle_fully_closed_locked(
     state: &mut MonitorState,
-    now: f64,
+    now: Instant,
     state_changed: bool,
 ) -> MonitorAction {
-    state.last_full_close_at = now;
+    state.last_full_close_at = Some(now);
     state.awaiting_open_after_full_close = true;
     state.below_threshold_streak = 0;
 
@@ -409,7 +409,7 @@ fn should_prepare_fully_closed(state: &MonitorState, state_changed: bool) -> boo
 fn handle_partially_closed_locked(
     state: &mut MonitorState,
     angle: u32,
-    now: f64,
+    now: Instant,
 ) -> MonitorAction {
     if partial_dimming_suppression_reason(state, now).is_some() {
         state.below_threshold_streak = 0;
@@ -524,45 +524,54 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 }
 
 #[cfg(test)]
-fn partial_grace_active(state: &MonitorState, now: f64) -> bool {
+fn partial_grace_active(state: &MonitorState, now: Instant) -> bool {
     partial_dimming_suppression_reason(state, now).is_some()
 }
 
 #[cfg(test)]
-fn partial_dimming_suppressed(state: &MonitorState, now: f64) -> bool {
+fn partial_dimming_suppressed(state: &MonitorState, now: Instant) -> bool {
     partial_dimming_suppression_reason(state, now).is_some()
 }
 
-fn partial_dimming_suppression_reason(state: &MonitorState, now: f64) -> Option<&'static str> {
+fn partial_dimming_suppression_reason(
+    state: &MonitorState,
+    now: Instant,
+) -> Option<&'static str> {
     if state.awaiting_open_after_full_close {
         return Some("awaiting open after full close");
     }
-    if since(state.last_full_close_at, now) < MONITOR_POST_CLOSE_GRACE_SECONDS {
+    if since(state.last_full_close_at, now)
+        < Duration::from_secs_f64(MONITOR_POST_CLOSE_GRACE_SECONDS)
+    {
         return Some("post full-close grace");
     }
-    if since(state.last_open_at, now) < MONITOR_POST_OPEN_GRACE_SECONDS {
+    if since(state.last_open_at, now)
+        < Duration::from_secs_f64(MONITOR_POST_OPEN_GRACE_SECONDS)
+    {
         return Some("post open grace");
     }
-    if since(state.last_wake_at, now) < MONITOR_POST_WAKE_GRACE_SECONDS {
+    if since(state.last_wake_at, now)
+        < Duration::from_secs_f64(MONITOR_POST_WAKE_GRACE_SECONDS)
+    {
         return Some("post wake grace");
     }
     None
 }
 
-fn since(timestamp: f64, now: f64) -> f64 {
-    if timestamp > 0.0 { now - timestamp } else { f64::INFINITY }
+fn since(timestamp: Option<Instant>, now: Instant) -> Duration {
+    timestamp.map_or(Duration::MAX, |timestamp| now.saturating_duration_since(timestamp))
 }
 
 fn handle_open_locked(
     state: &mut MonitorState,
-    now: f64,
+    now: Instant,
     state_changed: bool,
 ) -> MonitorAction {
     state.below_threshold_streak = 0;
     let opening_after_full_close = state.awaiting_open_after_full_close;
     state.awaiting_open_after_full_close = false;
     if state_changed {
-        state.last_open_at = now;
+        state.last_open_at = Some(now);
     }
     maybe_start_open_restore_hold(state, now, opening_after_full_close);
 
@@ -572,23 +581,24 @@ fn handle_open_locked(
 
     let clear_internal_after_restore = should_clear_internal_restore_on_open(state, now);
     if clear_internal_after_restore {
-        state.keep_internal_restore_until = 0.0;
+        state.keep_internal_restore_until = None;
     }
 
     MonitorAction::RestoreDisplayState { log_restore: true, clear_internal_after_restore }
 }
 
-fn should_clear_internal_restore_on_open(state: &MonitorState, now: f64) -> bool {
-    state.keep_internal_restore_until <= 0.0 || now >= state.keep_internal_restore_until
+fn should_clear_internal_restore_on_open(state: &MonitorState, now: Instant) -> bool {
+    state.keep_internal_restore_until.is_none_or(|until| now >= until)
 }
 
 fn maybe_start_open_restore_hold(
     state: &mut MonitorState,
-    now: f64,
+    now: Instant,
     opening_after_full_close: bool,
 ) {
     if opening_after_full_close && state.internal_display_state.is_some() {
-        state.keep_internal_restore_until = now + MONITOR_POST_OPEN_RESTORE_SECONDS;
+        state.keep_internal_restore_until =
+            Some(now + Duration::from_secs_f64(MONITOR_POST_OPEN_RESTORE_SECONDS));
     }
 }
 
@@ -603,15 +613,15 @@ extern "C" fn handle_will_sleep(_context: *mut std::ffi::c_void) {
         return;
     };
 
-    let now = current_time_seconds();
+    let now = Instant::now();
     {
         let mut state = lock_state(shared_state);
         state.system_sleeping = true;
-        state.last_full_close_at = now;
-        state.last_open_at = 0.0;
-        state.last_wake_at = 0.0;
+        state.last_full_close_at = Some(now);
+        state.last_open_at = None;
+        state.last_wake_at = None;
         state.awaiting_open_after_full_close = true;
-        state.keep_internal_restore_until = 0.0;
+        state.keep_internal_restore_until = None;
         state.last_angle = None;
         state.last_lid_state = None;
         state.below_threshold_streak = 0;
@@ -625,14 +635,14 @@ extern "C" fn handle_did_wake(_context: *mut std::ffi::c_void) {
         return;
     };
 
-    let now = current_time_seconds();
+    let now = Instant::now();
     let mut state = lock_state(shared_state);
     state.system_sleeping = false;
-    state.last_wake_at = now;
-    state.last_full_close_at = now;
-    state.last_open_at = 0.0;
+    state.last_wake_at = Some(now);
+    state.last_full_close_at = Some(now);
+    state.last_open_at = None;
     state.awaiting_open_after_full_close = true;
-    state.keep_internal_restore_until = 0.0;
+    state.keep_internal_restore_until = None;
     state.last_angle = None;
     state.last_lid_state = None;
     state.below_threshold_streak = 0;
@@ -647,13 +657,6 @@ fn lock_state(
     }
 }
 
-fn current_time_seconds() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs_f64())
-        .unwrap_or(0.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -664,6 +667,7 @@ mod tests {
         should_restore_on_open,
     };
     use lidoff_display::InternalDisplayState;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn lid_state_tracks_ranges() {
@@ -733,47 +737,51 @@ mod tests {
     #[test]
     fn open_transition_starts_partial_grace_period() {
         let mut state = MonitorState::new();
+        let now = Instant::now();
 
-        handle_open_locked(&mut state, 10.0, true);
+        handle_open_locked(&mut state, now, true);
 
-        assert!(partial_grace_active(&state, 10.5));
-        assert!(!partial_grace_active(&state, 11.0));
+        assert!(partial_grace_active(&state, now + Duration::from_millis(500)));
+        assert!(!partial_grace_active(&state, now + Duration::from_secs(1)));
     }
 
     #[test]
     fn stable_open_does_not_refresh_partial_grace_period() {
         let mut state = MonitorState::new();
-        state.last_open_at = 10.0;
+        let now = Instant::now();
+        state.last_open_at = now.checked_sub(Duration::from_secs(10));
 
-        handle_open_locked(&mut state, 20.0, false);
+        handle_open_locked(&mut state, now, false);
 
-        assert!(!partial_grace_active(&state, 20.0));
+        assert!(!partial_grace_active(&state, now));
     }
 
     #[test]
     fn full_close_suppresses_partial_dimming_until_open() {
         let mut state = MonitorState::new();
+        let now = Instant::now();
         state.awaiting_open_after_full_close = true;
 
-        assert!(partial_dimming_suppressed(&state, 100.0));
+        assert!(partial_dimming_suppressed(&state, now));
 
-        handle_open_locked(&mut state, 100.0, true);
+        handle_open_locked(&mut state, now, true);
 
         assert!(!state.awaiting_open_after_full_close);
-        assert!(partial_dimming_suppressed(&state, 100.5));
-        assert!(!partial_dimming_suppressed(&state, 101.0));
+        assert!(partial_dimming_suppressed(&state, now + Duration::from_millis(500)));
+        assert!(!partial_dimming_suppressed(&state, now + Duration::from_secs(1)));
     }
 
     #[test]
     fn opening_after_full_close_keeps_internal_restore_temporarily() {
         let mut state = MonitorState::new();
+        let now = Instant::now();
         state.awaiting_open_after_full_close = true;
         state.internal_display_state = Some(InternalDisplayState { brightness: 0.42 });
 
-        maybe_start_open_restore_hold(&mut state, 100.0, true);
+        maybe_start_open_restore_hold(&mut state, now, true);
 
         assert!(state.internal_display_state.is_some());
-        assert!(!should_clear_internal_restore_on_open(&state, 101.0));
-        assert!(should_clear_internal_restore_on_open(&state, 103.0));
+        assert!(!should_clear_internal_restore_on_open(&state, now + Duration::from_secs(1)));
+        assert!(should_clear_internal_restore_on_open(&state, now + Duration::from_secs(3)));
     }
 }

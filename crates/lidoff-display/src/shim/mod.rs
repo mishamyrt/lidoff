@@ -39,6 +39,7 @@ unsafe extern "C" {
 
 const MAX_DISPLAY_COUNT: usize = 32;
 type DisplayIds = SmallVec<[u32; MAX_DISPLAY_COUNT]>;
+type SkylightDisplayIds = SmallVec<[u32; 4]>;
 
 /// Returns a list of online display IDs.
 pub(crate) fn online_displays() -> Option<DisplayIds> {
@@ -101,13 +102,13 @@ pub(crate) fn disable_skylight_display(display_id: u32) -> bool {
 
 /// Copies the Skylight state into a buffer.
 /// Returns the number of display IDs copied.
-pub(crate) fn copy_skylight_state() -> Option<Vec<u32>> {
+pub(crate) fn copy_skylight_state() -> Option<SkylightDisplayIds> {
     let count = unsafe { SkylightBackupCount() };
     if count == 0 {
-        return Some(Vec::new());
+        return Some(SmallVec::new());
     }
 
-    let mut display_ids = vec![0_u32; count];
+    let mut display_ids = SmallVec::from_elem(0_u32, count);
     let copied = unsafe { SkylightCopyState(display_ids.as_mut_ptr(), count) };
     (copied == count).then_some(display_ids)
 }

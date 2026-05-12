@@ -220,7 +220,7 @@ mod tests {
         let recovery_state = RecoveryStateData {
             internal_display_state: Some(InternalDisplayState { brightness: 0.42 }),
             external_display_state: Some(ExternalDisplayState {
-                skylight_display_ids: vec![2, 5],
+                skylight_display_ids: vec![2, 5].into(),
             }),
             keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.65 }),
         };
@@ -249,7 +249,7 @@ mod tests {
         let recovery_state = RecoveryStateData {
             internal_display_state: Some(InternalDisplayState { brightness: 0.73 }),
             external_display_state: Some(ExternalDisplayState {
-                skylight_display_ids: vec![11],
+                skylight_display_ids: vec![11].into(),
             }),
             keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.84 }),
         };
@@ -269,7 +269,9 @@ mod tests {
                 saved_brightness: 0.58,
                 pending_external_restore: true,
             },
-            external_state: Some(ExternalDisplayState { skylight_display_ids: vec![17] }),
+            external_state: Some(ExternalDisplayState {
+                skylight_display_ids: vec![17].into(),
+            }),
         })
         .unwrap();
 
@@ -280,7 +282,7 @@ mod tests {
             RecoveryStateData {
                 internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
                 external_display_state: Some(ExternalDisplayState {
-                    skylight_display_ids: vec![17],
+                    skylight_display_ids: vec![17].into(),
                 }),
                 keyboard_backlight_state: None,
             }
@@ -293,7 +295,7 @@ mod tests {
             version: super::PRE_KEYBOARD_BACKLIGHT_RECOVERY_STATE_VERSION,
             internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
             external_display_state: Some(ExternalDisplayState {
-                skylight_display_ids: vec![17],
+                skylight_display_ids: vec![17].into(),
             }),
         })
         .unwrap();
@@ -305,7 +307,7 @@ mod tests {
             RecoveryStateData {
                 internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
                 external_display_state: Some(ExternalDisplayState {
-                    skylight_display_ids: vec![17],
+                    skylight_display_ids: vec![17].into(),
                 }),
                 keyboard_backlight_state: None,
             }

@@ -16,7 +16,7 @@ lidoff-power = { path = "./crates/lidoff-power" }
 
 bincode = "1.3"
 serde = "1.0"
-smallvec = "1.15"
+smallvec = { version = "1.15", features = ["serde"] }
 thiserror = "2"
 lunchd = "0.1.1"
 

@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::{
@@ -19,7 +20,7 @@ pub struct ExternalDisplays;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ExternalDisplayState {
-    pub skylight_display_ids: Vec<u32>,
+    pub skylight_display_ids: SmallVec<[u32; 4]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -188,7 +189,7 @@ fn disable_external_displays(displays: &[u32]) -> (usize, usize) {
 }
 
 fn capture_disabled_external_displays(displays: &[u32]) -> (ExternalDisplayState, usize) {
-    let mut skylight_display_ids = Vec::new();
+    let mut skylight_display_ids = SmallVec::new();
     let mut failed = 0;
     for display_id in external_display_ids(displays) {
         if disable_skylight_display(display_id) {

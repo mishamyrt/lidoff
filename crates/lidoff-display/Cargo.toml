@@ -10,5 +10,8 @@ serde = { workspace = true, features = ["derive"] }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 
+[build-dependencies]
+cc = "1"
+
 [lints]
 workspace = true

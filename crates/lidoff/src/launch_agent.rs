@@ -3,32 +3,30 @@ use std::io;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::logging;
-
 const LAUNCH_AGENT_LABEL: &str = "co.myrt.lidoff";
 const LAUNCH_AGENT_RELATIVE_PATH: &str = "Library/LaunchAgents/co.myrt.lidoff.plist";
 
-pub fn install(threshold: i32) -> bool {
+pub(crate) fn install(threshold: u32) -> bool {
     match install_inner(threshold) {
         Ok(()) => true,
         Err(err) => {
-            logging::error(err);
+            error(err);
             false
         }
     }
 }
 
-pub fn uninstall() -> bool {
+pub(crate) fn uninstall() -> bool {
     match uninstall_inner() {
         Ok(()) => true,
         Err(err) => {
-            logging::error(err);
+            error(err);
             false
         }
     }
 }
 
-fn install_inner(threshold: i32) -> Result<(), String> {
+fn install_inner(threshold: u32) -> Result<(), String> {
     let plist_path = launch_agent_plist_path().map_err(io_error)?;
     if let Some(parent) = plist_path.parent() {
         fs::create_dir_all(parent).map_err(io_error)?;
@@ -43,15 +41,15 @@ fn install_inner(threshold: i32) -> Result<(), String> {
         return Err(format_launchctl_error("load", &output.stderr));
     }
 
-    logging::info(format!("installed ({})", plist_path.display()));
-    logging::info(format!("threshold: {threshold}°"));
+    info(format!("installed ({})", plist_path.display()));
+    info(format!("threshold: {threshold}°"));
     Ok(())
 }
 
 fn uninstall_inner() -> Result<(), String> {
     let plist_path = launch_agent_plist_path().map_err(io_error)?;
     if !plist_path.exists() {
-        logging::info("not installed");
+        info("not installed");
         return Ok(());
     }
 
@@ -62,7 +60,7 @@ fn uninstall_inner() -> Result<(), String> {
     }
 
     fs::remove_file(&plist_path).map_err(io_error)?;
-    logging::info("uninstalled");
+    info("uninstalled");
     Ok(())
 }
 
@@ -87,7 +85,7 @@ fn resolve_executable_path() -> io::Result<PathBuf> {
     }
 }
 
-fn generate_plist_content(threshold: i32) -> io::Result<String> {
+fn generate_plist_content(threshold: u32) -> io::Result<String> {
     let real_path = resolve_executable_path()?;
     Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -134,4 +132,14 @@ fn format_launchctl_error(action: &str, stderr: &[u8]) -> String {
 
 fn io_error(error: io::Error) -> String {
     error.to_string()
+}
+
+#[allow(clippy::print_stdout)]
+fn info(message: impl AsRef<str>) {
+    println!("lidoff[info]: {}", message.as_ref());
+}
+
+#[allow(clippy::print_stderr)]
+fn error(message: impl AsRef<str>) {
+    eprintln!("lidoff[error]: {}", message.as_ref());
 }

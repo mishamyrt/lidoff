@@ -12,12 +12,13 @@ use lidoff_power::{CaffeinateError, PowerObserver, caffeinate_start, caffeinate_
 use crate::logging;
 use crate::recovery_state::{self, RecoveryStateData};
 
-pub const MONITOR_DEFAULT_THRESHOLD: i32 = 30;
-pub const MONITOR_DEFAULT_INTERVAL_MS: i32 = 300;
-pub const MONITOR_FULL_CLOSE_ANGLE: i32 = 10;
-pub const MONITOR_PARTIAL_STABILITY_SAMPLES: i32 = 2;
-pub const MONITOR_POST_CLOSE_GRACE_SECONDS: f64 = 1.0;
-pub const MONITOR_POST_WAKE_GRACE_SECONDS: f64 = 1.0;
+pub const MONITOR_DEFAULT_INTERVAL_MS: u64 = 300;
+pub const MONITOR_DEFAULT_THRESHOLD: u32 = 30;
+pub const MONITOR_FULL_CLOSE_ANGLE: u32 = 10;
+
+const MONITOR_PARTIAL_STABILITY_SAMPLES: i32 = 2;
+const MONITOR_POST_CLOSE_GRACE_SECONDS: f64 = 1.0;
+const MONITOR_POST_WAKE_GRACE_SECONDS: f64 = 1.0;
 
 static POWER_STATE: OnceLock<Arc<Mutex<MonitorState>>> = OnceLock::new();
 
@@ -29,9 +30,9 @@ enum LidState {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct MonitorConfig {
-    pub threshold: i32,
-    pub interval_ms: i32,
+pub(crate) struct MonitorConfig {
+    pub threshold: u32,
+    pub interval_ms: u64,
 }
 
 #[derive(Debug)]
@@ -40,7 +41,7 @@ struct MonitorState {
     internal_display_state: Option<InternalDisplayState>,
     external_display_state: Option<ExternalDisplayState>,
     caffeinate_active: bool,
-    last_angle: i32,
+    last_angle: Option<u32>,
     below_threshold_streak: i32,
     last_full_close_at: f64,
     last_wake_at: f64,
@@ -54,7 +55,7 @@ impl MonitorState {
             internal_display_state: None,
             external_display_state: None,
             caffeinate_active: false,
-            last_angle: -1,
+            last_angle: None,
             below_threshold_streak: 0,
             last_full_close_at: 0.0,
             last_wake_at: 0.0,
@@ -63,7 +64,7 @@ impl MonitorState {
     }
 }
 
-pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
+pub(crate) fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
     let _ = POWER_STATE.set(shared_state.clone());
 
@@ -74,17 +75,17 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
 
     let mut observer = PowerObserver::new();
     if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
-        logging::error(format!("failed to start power observer: {}", e));
+        logging::error(format!("failed to start power observer: {e}"));
         return;
     }
 
-    let interval = Duration::from_millis(config.interval_ms as u64);
+    let interval = Duration::from_millis(config.interval_ms);
 
     while should_run.load(Ordering::Relaxed) {
         let angle = match lidoff_lidsensor::get_angle() {
             Ok(angle) => angle,
             Err(e) => {
-                logging::error(format!("failed to get lid angle: {}", e));
+                logging::error(format!("failed to get lid angle: {e}"));
                 thread::sleep(interval);
                 continue;
             }
@@ -99,11 +100,11 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
                 match lid_state_for_angle(angle, config.threshold) {
                     LidState::FullyClosed => handle_fully_closed_locked(&mut state, now),
                     LidState::PartiallyClosed => {
-                        handle_partially_closed_locked(&mut state, angle, now)
+                        handle_partially_closed_locked(&mut state, angle, now);
                     }
                     LidState::Open => handle_open_locked(&mut state),
                 }
-                state.last_angle = angle;
+                state.last_angle = Some(angle);
             }
         }
 
@@ -115,7 +116,7 @@ pub fn run(config: &MonitorConfig, should_run: &AtomicBool) {
     persist_recovery_state_locked(&state);
 }
 
-fn lid_state_for_angle(angle: i32, threshold: i32) -> LidState {
+fn lid_state_for_angle(angle: u32, threshold: u32) -> LidState {
     if angle < MONITOR_FULL_CLOSE_ANGLE {
         return LidState::FullyClosed;
     }
@@ -180,7 +181,7 @@ fn start_caffeinate_locked(state: &mut MonitorState) {
         Ok(()) | Err(CaffeinateError::AlreadyActive) => {
             state.caffeinate_active = true;
         }
-        Err(error) => logging::error(format!("failed to start caffeinate session: {}", error)),
+        Err(error) => logging::error(format!("failed to start caffeinate session: {error}")),
     }
 }
 
@@ -193,7 +194,7 @@ fn stop_caffeinate_locked(state: &mut MonitorState) {
         Ok(()) | Err(CaffeinateError::NotActive) => {
             state.caffeinate_active = false;
         }
-        Err(error) => logging::error(format!("failed to stop caffeinate session: {}", error)),
+        Err(error) => logging::error(format!("failed to stop caffeinate session: {error}")),
     }
 }
 
@@ -276,7 +277,7 @@ fn handle_fully_closed_locked(state: &mut MonitorState, now: f64) {
     persist_recovery_state_locked(state);
 }
 
-fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64) {
+fn handle_partially_closed_locked(state: &mut MonitorState, angle: u32, now: f64) {
     let since_close = if state.last_full_close_at > 0.0 {
         now - state.last_full_close_at
     } else {
@@ -331,7 +332,8 @@ fn handle_partially_closed_locked(state: &mut MonitorState, angle: i32, now: f64
         return;
     }
 
-    let not_opening = if state.last_angle == -1 { true } else { angle <= state.last_angle };
+    let not_opening =
+        if let Some(last_angle) = state.last_angle { angle <= last_angle } else { true };
     if not_opening {
         state.below_threshold_streak += 1;
     } else {
@@ -403,7 +405,7 @@ extern "C" fn handle_will_sleep(_context: *mut std::ffi::c_void) {
     state.system_sleeping = true;
     state.last_full_close_at = now;
     state.last_wake_at = 0.0;
-    state.last_angle = -1;
+    state.last_angle = None;
     state.below_threshold_streak = 0;
     prepare_display_state_for_sleep_locked(&mut state, false);
     persist_recovery_state_locked(&state);
@@ -419,7 +421,7 @@ extern "C" fn handle_did_wake(_context: *mut std::ffi::c_void) {
     state.system_sleeping = false;
     state.last_wake_at = now;
     state.last_full_close_at = now;
-    state.last_angle = -1;
+    state.last_angle = None;
     state.below_threshold_streak = 0;
 }
 
@@ -463,6 +465,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn dimming_uses_current_nonzero_brightness_for_restore() {
         let mut state = MonitorState::new();
         assert_eq!(brightness_snapshot_for_dim(&mut state, 0.42), 0.42);
@@ -470,6 +473,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn dimming_reuses_last_nonzero_brightness_when_current_is_zero() {
         let mut state = MonitorState::new();
         state.last_nonzero_brightness = 0.64;

@@ -9,6 +9,9 @@ pub enum SensorError {
 
     #[error("lid sensor angle reading failed")]
     ReadFailed,
+
+    #[error("lid sensor angle out of range")]
+    AngleOutOfRange,
 }
 
 unsafe extern "C" {
@@ -36,9 +39,14 @@ pub fn close() {
 /// Returns the current lid angle as an integer.
 ///
 /// Returns an error if the angle could not be read.
-pub fn get_angle() -> Result<i32, SensorError> {
+pub fn get_angle() -> Result<u32, SensorError> {
     unsafe {
         let angle = LidSensorGetAngle();
-        if angle == LID_ANGLE_ERROR { Err(SensorError::ReadFailed) } else { Ok(angle) }
+        if angle == LID_ANGLE_ERROR {
+            Err(SensorError::ReadFailed)
+        } else {
+            let uangle = angle.try_into().map_err(|_| SensorError::AngleOutOfRange)?;
+            Ok(uangle)
+        }
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "lidoff-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lidoff-display = { workspace = true }
+lidoff-lidsensor = { workspace = true }
+lidoff-power = { workspace = true }
+
+bincode = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

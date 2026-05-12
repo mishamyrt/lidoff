@@ -9,6 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 lidoff = { path = "./crates/lidoff" }
+lidoff-daemon = { path = "./crates/lidoff-daemon" }
 lidoff-display = { path = "./crates/lidoff-display" }
 lidoff-lidsensor = { path = "./crates/lidoff-lidsensor" }
 lidoff-power = { path = "./crates/lidoff-power" }

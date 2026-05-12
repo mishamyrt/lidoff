@@ -8,8 +8,8 @@ build = "build.rs"
 [dependencies]
 thiserror = { workspace = true }
 
-[lints]
-workspace = true
-
 [build-dependencies]
 cc = "1"
+
+[lints]
+workspace = true

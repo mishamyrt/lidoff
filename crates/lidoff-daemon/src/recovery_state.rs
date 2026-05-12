@@ -14,7 +14,7 @@ const RECOVERY_STATE_FILE: &str = "state.bin";
 const LEGACY_RECOVERY_STATE_FILE: &str = "state.plist";
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct RecoveryStateData {
+pub(crate) struct RecoveryStateData {
     pub internal_display_state: Option<InternalDisplayState>,
     pub external_display_state: Option<ExternalDisplayState>,
 }
@@ -40,7 +40,7 @@ struct LegacyPersistedState {
     external_state: Option<ExternalDisplayState>,
 }
 
-pub fn load() -> Option<RecoveryStateData> {
+pub(crate) fn load() -> Option<RecoveryStateData> {
     let home = current_home_dir()?;
     if let Err(error) = cleanup_legacy_recovery_file_at(&home) {
         logging::error(format!("failed to remove legacy recovery state: {error}"));
@@ -56,7 +56,7 @@ pub fn load() -> Option<RecoveryStateData> {
     }
 }
 
-pub fn save(recovery_state: &RecoveryStateData) -> bool {
+pub(crate) fn save(recovery_state: &RecoveryStateData) -> bool {
     let Some(home) = current_home_dir() else {
         return false;
     };
@@ -64,7 +64,7 @@ pub fn save(recovery_state: &RecoveryStateData) -> bool {
     save_at_home(&home, recovery_state).is_ok()
 }
 
-pub fn clear() {
+pub(crate) fn clear() {
     let Some(home) = current_home_dir() else {
         return;
     };

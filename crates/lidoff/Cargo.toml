@@ -4,9 +4,7 @@ version = "0.3.2"
 edition = "2024"
 
 [dependencies]
-lidoff-display = { workspace = true }
-lidoff-lidsensor = { workspace = true }
-lidoff-power = { workspace = true }
+lidoff-daemon = { workspace = true }
 
-bincode = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+[lints]
+workspace = true

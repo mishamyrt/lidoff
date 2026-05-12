@@ -1,11 +1,11 @@
-use crate::monitor::{
+use lidoff_daemon::{
     MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ParsedArgs {
-    pub threshold: i32,
-    pub interval_ms: i32,
+pub(crate) struct ParsedArgs {
+    pub threshold: u32,
+    pub interval_ms: u64,
     pub do_install: bool,
     pub do_uninstall: bool,
     pub verbose: bool,
@@ -24,12 +24,12 @@ impl Default for ParsedArgs {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParseError {
+pub(crate) struct ParseError {
     pub message: String,
     pub print_usage: bool,
 }
 
-pub fn parse<I>(args: I) -> Result<ParsedArgs, ParseError>
+pub(crate) fn parse<I>(args: I) -> Result<ParsedArgs, ParseError>
 where
     I: IntoIterator<Item = String>,
 {
@@ -48,7 +48,7 @@ where
                         print_usage: true,
                     });
                 };
-                let threshold = value.parse::<i32>().unwrap_or(-1);
+                let threshold = value.parse::<u32>().unwrap_or(0);
                 if !(0..=180).contains(&threshold) {
                     return Err(ParseError {
                         message: format!("invalid threshold: {threshold} (0-180)"),
@@ -64,7 +64,7 @@ where
                         print_usage: true,
                     });
                 };
-                let interval_ms = value.parse::<i32>().unwrap_or(-1);
+                let interval_ms = value.parse::<u64>().unwrap_or(0);
                 if !(100..=10_000).contains(&interval_ms) {
                     return Err(ParseError {
                         message: format!("invalid interval: {interval_ms} (100-10000)"),
@@ -85,7 +85,8 @@ where
     Ok(parsed)
 }
 
-pub fn print_usage(program_name: &str) {
+#[allow(clippy::print_stdout)]
+pub(crate) fn print_usage(program_name: &str) {
     println!("lidoff - MacBook lid angle brightness daemon\n");
     println!("Usage:");
     println!("  {program_name} [-t threshold] [-i interval]  Run daemon");

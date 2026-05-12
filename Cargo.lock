@@ -31,6 +31,13 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 name = "lidoff"
 version = "0.3.2"
 dependencies = [
+ "lidoff-daemon",
+]
+
+[[package]]
+name = "lidoff-daemon"
+version = "0.4.0"
+dependencies = [
  "bincode",
  "lidoff-display",
  "lidoff-lidsensor",

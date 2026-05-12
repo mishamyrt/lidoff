@@ -95,9 +95,10 @@ impl DisplayController for ExternalDisplays {
         }
     }
 
-    fn get_state(&mut self) -> Option<Self::State> {
-        let displays = online_displays()?;
-        copy_state_with_displays(&displays).ok()
+    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
+        let displays =
+            online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
+        copy_state_with_displays(&displays)
     }
 
     fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {

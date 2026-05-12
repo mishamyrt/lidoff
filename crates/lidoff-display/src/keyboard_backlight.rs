@@ -26,6 +26,9 @@ pub enum KeyboardBacklightError {
 
     #[error("failed to set keyboard backlight")]
     BrightnessFailed,
+
+    #[error("failed to get keyboard backlight")]
+    GetBrightnessFailed,
 }
 
 impl DisplayController for KeyboardBacklight {
@@ -47,9 +50,13 @@ impl DisplayController for KeyboardBacklight {
         Ok(())
     }
 
-    fn get_state(&mut self) -> Option<Self::State> {
+    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
         let brightness = keyboard_backlight_get();
-        (brightness >= 0.0).then_some(KeyboardBacklightState { brightness })
+        if brightness < 0.0 {
+            return Err(KeyboardBacklightError::GetBrightnessFailed);
+        }
+
+        Ok(KeyboardBacklightState { brightness })
     }
 
     fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {

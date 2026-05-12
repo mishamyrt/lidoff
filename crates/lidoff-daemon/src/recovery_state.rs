@@ -65,13 +65,20 @@ pub(crate) fn load(recovery_cache_dir: &Path) -> Option<RecoveryStateData> {
     }
 }
 
-pub(crate) fn save(recovery_cache_dir: &Path, recovery_state: &RecoveryStateData) -> bool {
-    save_at_cache_dir(recovery_cache_dir, recovery_state).is_ok()
+pub(crate) fn save(
+    recovery_cache_dir: &Path,
+    recovery_state: &RecoveryStateData,
+) -> io::Result<()> {
+    save_at_cache_dir(recovery_cache_dir, recovery_state)
 }
 
-pub(crate) fn clear(recovery_cache_dir: &Path) {
+pub(crate) fn clear(recovery_cache_dir: &Path) -> io::Result<()> {
     let path = recovery_state_path(recovery_cache_dir);
-    let _ = fs::remove_file(path);
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn load_at_cache_dir(recovery_cache_dir: &Path) -> io::Result<Option<RecoveryStateData>> {

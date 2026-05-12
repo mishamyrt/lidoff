@@ -324,9 +324,12 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
 
 fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
     let mut internal = InternalDisplay::new();
-    let Some(current_state) = internal.get_state() else {
-        logging::error!("failed to read brightness");
-        return;
+    let current_state = match internal.get_state() {
+        Ok(state) => state,
+        Err(error) => {
+            logging::error!("failed to read brightness: {error}");
+            return;
+        }
     };
 
     {
@@ -368,9 +371,12 @@ fn clear_pending_display_state(shared_state: &SharedMonitorState) {
 fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorState) -> bool {
     let mut keyboard = KeyboardBacklight::new();
     if lock_state(shared_state).keyboard_backlight_state.is_none() {
-        let Some(current_state) = keyboard.get_state() else {
-            logging::error!("failed to read keyboard backlight");
-            return false;
+        let current_state = match keyboard.get_state() {
+            Ok(state) => state,
+            Err(error) => {
+                logging::error!("failed to read keyboard backlight: {error}");
+                return false;
+            }
         };
 
         let mut state = lock_state(shared_state);

@@ -26,6 +26,9 @@ pub enum InternalDisplayError {
 
     #[error("failed to set brightness")]
     BrightnessFailed,
+
+    #[error("failed to get brightness")]
+    GetBrightnessFailed,
 }
 
 impl DisplayController for InternalDisplay {
@@ -47,9 +50,13 @@ impl DisplayController for InternalDisplay {
         Ok(())
     }
 
-    fn get_state(&mut self) -> Option<Self::State> {
+    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
         let brightness = brightness_get();
-        (brightness >= 0.0).then_some(InternalDisplayState { brightness })
+        if brightness < 0.0 {
+            return Err(InternalDisplayError::GetBrightnessFailed);
+        }
+
+        Ok(InternalDisplayState { brightness })
     }
 
     fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {

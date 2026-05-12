@@ -18,11 +18,13 @@ fn persist_recovery_state_data(recovery_state: &RecoveryStateData, recovery_cach
         || recovery_state.external_display_state.is_some()
         || recovery_state.keyboard_backlight_state.is_some()
     {
-        if !recovery_state::save(recovery_cache_dir, recovery_state) {
-            logging::error!("failed to persist recovery state");
+        if let Err(error) = recovery_state::save(recovery_cache_dir, recovery_state) {
+            logging::error!("failed to persist recovery state: {error}");
         }
     } else {
-        recovery_state::clear(recovery_cache_dir);
+        if let Err(error) = recovery_state::clear(recovery_cache_dir) {
+            logging::error!("failed to clear recovery state: {error}");
+        }
     }
 }
 

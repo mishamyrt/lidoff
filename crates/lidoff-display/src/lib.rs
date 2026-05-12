@@ -26,7 +26,7 @@ pub trait DisplayController {
     fn disable(&mut self) -> Result<(), Self::Error>;
 
     /// Returns the current state of the display.
-    fn get_state(&mut self) -> Option<Self::State>;
+    fn get_state(&mut self) -> Result<Self::State, Self::Error>;
 
     /// Restores the display to the given state.
     fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error>;

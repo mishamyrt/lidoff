@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
 use lidoff_display::{
     DisplayController, ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplays,
@@ -11,7 +12,29 @@ use super::persistence::persist_recovery_state;
 use super::state::{MonitorAction, MonitorState, SharedMonitorState, lock_state};
 use crate::logging;
 
+static EFFECTS_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_effects() -> MutexGuard<'static, ()> {
+    match EFFECTS_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 pub(super) fn execute_monitor_action(
+    shared_state: &SharedMonitorState,
+    action: MonitorAction,
+    recovery_cache_dir: &Path,
+) {
+    if action == MonitorAction::None {
+        return;
+    }
+
+    let _effects = lock_effects();
+    execute_monitor_action_locked(shared_state, action, recovery_cache_dir);
+}
+
+fn execute_monitor_action_locked(
     shared_state: &SharedMonitorState,
     action: MonitorAction,
     recovery_cache_dir: &Path,
@@ -19,11 +42,15 @@ pub(super) fn execute_monitor_action(
     match action {
         MonitorAction::None => {}
         MonitorAction::RestoreDisplayState { log_restore, clear_internal_after_restore } => {
-            restore_display_state(shared_state, log_restore, clear_internal_after_restore);
+            restore_display_state_locked(
+                shared_state,
+                log_restore,
+                clear_internal_after_restore,
+            );
             persist_recovery_state(shared_state, recovery_cache_dir);
         }
         MonitorAction::PrepareDisplayStateForSleep { log_restore } => {
-            prepare_display_state_for_sleep(shared_state, log_restore);
+            prepare_display_state_for_sleep_locked(shared_state, log_restore);
             persist_recovery_state(shared_state, recovery_cache_dir);
         }
         MonitorAction::ResumePartialDim => {
@@ -40,6 +67,15 @@ pub(super) fn restore_display_state(
     log_restore: bool,
     clear_internal_after_restore: bool,
 ) {
+    let _effects = lock_effects();
+    restore_display_state_locked(shared_state, log_restore, clear_internal_after_restore);
+}
+
+fn restore_display_state_locked(
+    shared_state: &SharedMonitorState,
+    log_restore: bool,
+    clear_internal_after_restore: bool,
+) {
     restore_external_display_state(shared_state);
     restore_keyboard_backlight_state(shared_state, log_restore, true);
     restore_internal_display_state(shared_state, log_restore, clear_internal_after_restore);
@@ -47,6 +83,14 @@ pub(super) fn restore_display_state(
 }
 
 pub(super) fn prepare_display_state_for_sleep(
+    shared_state: &SharedMonitorState,
+    log_restore: bool,
+) {
+    let _effects = lock_effects();
+    prepare_display_state_for_sleep_locked(shared_state, log_restore);
+}
+
+fn prepare_display_state_for_sleep_locked(
     shared_state: &SharedMonitorState,
     log_restore: bool,
 ) {

@@ -63,7 +63,7 @@ pub(crate) fn is_builtin(display_id: u32) -> bool {
 
 unsafe extern "C" {
     fn SkylightPrepare(display_count: usize) -> u8;
-    fn SkylightFinalize();
+    fn SkylightFinalize() -> u8;
     fn SkylightClearBackups();
     fn SkylightCaptureDisplay(display_id: u32) -> u8;
     fn SkylightDisableDisplay(display_id: u32) -> u8;
@@ -78,8 +78,8 @@ pub(crate) fn prepare_skylight(display_count: usize) -> bool {
 }
 
 /// Finalizes the Skylight session.
-pub(crate) fn finalize_skylight() {
-    unsafe { SkylightFinalize() }
+pub(crate) fn finalize_skylight() -> bool {
+    unsafe { c_bool(SkylightFinalize()) }
 }
 
 /// Clears the Skylight backups.

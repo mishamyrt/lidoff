@@ -74,9 +74,13 @@ impl DisplayController for ExternalDisplays {
             return Err(ExternalDisplayError::SkylightPrepareFailed);
         }
 
-        let (disabled, failed) = disable_external_displays(&displays);
+        let (mut disabled, mut failed) = disable_external_displays(&displays);
 
-        finalize_skylight();
+        let committed = finalize_skylight();
+        if !committed {
+            failed += disabled;
+            disabled = 0;
+        }
         EXTERNAL_DISPLAYS_DISABLED.store(disabled > 0, Ordering::Relaxed);
 
         if failed > 0 {
@@ -128,11 +132,16 @@ impl ExternalDisplays {
             return Err(ExternalDisplayError::SkylightPrepareFailed);
         }
 
-        let (state, failed) = capture_disabled_external_displays(&displays);
-        let disabled = state.skylight_display_ids.len();
+        let (mut state, mut failed) = capture_disabled_external_displays(&displays);
+        let mut disabled = state.skylight_display_ids.len();
 
         clear_skylight_backups();
-        finalize_skylight();
+        let committed = finalize_skylight();
+        if !committed {
+            failed += disabled;
+            state.skylight_display_ids.clear();
+            disabled = 0;
+        }
         EXTERNAL_DISPLAYS_DISABLED.store(disabled > 0, Ordering::Relaxed);
 
         Ok(ExternalDisplayDisableResult { state, disabled, failed })

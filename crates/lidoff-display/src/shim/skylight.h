@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 uint8_t SkylightPrepare(size_t display_count);
-void SkylightFinalize(void);
+uint8_t SkylightFinalize(void);
 void SkylightClearBackups(void);
 uint8_t SkylightCaptureDisplay(CGDirectDisplayID display_id);
 uint8_t SkylightDisableDisplay(CGDirectDisplayID display_id);

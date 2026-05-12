@@ -16,6 +16,8 @@ static bool skylight_loaded = false;
 static bool skylight_available = false;
 static void *skylight_handle = NULL;
 static SLSConfigureDisplayEnabledFunc SLSConfigureDisplayEnabledPtr = NULL;
+static CGDisplayConfigRef skylight_config = NULL;
+static bool skylight_config_dirty = false;
 
 static void clearSkylightBackups(void) {
     if (skylight_backups == NULL) {
@@ -49,10 +51,30 @@ uint8_t SkylightPrepare(size_t display_count) {
     return 1;
 }
 
-void SkylightFinalize(void) {
+uint8_t SkylightFinalize(void) {
+    uint8_t ok = 1;
+
+    if (skylight_config != NULL) {
+        if (skylight_config_dirty) {
+            CGError err =
+                CGCompleteDisplayConfiguration(skylight_config, kCGConfigureForSession);
+            if (err != kCGErrorSuccess) {
+                CGCancelDisplayConfiguration(skylight_config);
+                ok = 0;
+            }
+        } else {
+            CGCancelDisplayConfiguration(skylight_config);
+        }
+
+        skylight_config = NULL;
+        skylight_config_dirty = false;
+    }
+
     if (skylight_backup_count == 0) {
         clearSkylightBackups();
     }
+
+    return ok;
 }
 
 size_t SkylightBackupCount(void) {
@@ -82,24 +104,19 @@ static bool skylightSetDisplayEnabled(CGDirectDisplayID display_id, bool enabled
         return false;
     }
 
-    CGDisplayConfigRef config = NULL;
-    CGError err = CGBeginDisplayConfiguration(&config);
-    if (err != kCGErrorSuccess || config == NULL) {
-        return false;
+    if (skylight_config == NULL) {
+        CGError err = CGBeginDisplayConfiguration(&skylight_config);
+        if (err != kCGErrorSuccess || skylight_config == NULL) {
+            return false;
+        }
     }
 
-    err = SLSConfigureDisplayEnabledPtr(config, display_id, enabled ? 1 : 0);
+    CGError err = SLSConfigureDisplayEnabledPtr(skylight_config, display_id, enabled ? 1 : 0);
     if (err != kCGErrorSuccess) {
-        CGCancelDisplayConfiguration(config);
         return false;
     }
 
-    err = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
-    if (err != kCGErrorSuccess) {
-        CGCancelDisplayConfiguration(config);
-        return false;
-    }
-
+    skylight_config_dirty = true;
     return true;
 }
 
@@ -144,6 +161,11 @@ size_t SkylightRestoreAll(void) {
         skylight_backups[remaining++] = display_id;
     }
 
+    if (!SkylightFinalize()) {
+        restored = 0;
+        remaining = skylight_backup_count;
+    }
+
     skylight_backup_count = remaining;
     if (skylight_backup_count == 0) {
         clearSkylightBackups();
@@ -176,6 +198,10 @@ size_t SkylightRestoreFromState(const CGDirectDisplayID *display_ids, size_t cou
         if (skylightSetDisplayEnabled(display_ids[i], true)) {
             restored++;
         }
+    }
+
+    if (!SkylightFinalize()) {
+        restored = 0;
     }
 
     clearSkylightBackups();

@@ -16,6 +16,7 @@ lidoff-power = { path = "./crates/lidoff-power" }
 
 bincode = "1.3"
 serde = { version = "1.0" }
+smallvec = "1.15"
 thiserror = "2"
 
 [workspace.lints.rust]

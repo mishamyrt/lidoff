@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 /* Brightness */
 
 unsafe extern "C" {
@@ -24,20 +26,20 @@ unsafe extern "C" {
 }
 
 const MAX_DISPLAY_COUNT: usize = 32;
+type DisplayIds = SmallVec<[u32; MAX_DISPLAY_COUNT]>;
 
 /// Returns a list of online display IDs.
-pub(crate) fn online_displays() -> Option<Vec<u32>> {
-    let mut displays = vec![0_u32; MAX_DISPLAY_COUNT];
+pub(crate) fn online_displays() -> Option<DisplayIds> {
+    let mut buffer = [0_u32; MAX_DISPLAY_COUNT];
     let mut count = 0_usize;
     let ok = unsafe {
-        c_bool(DisplaysListOnline(displays.as_mut_ptr(), displays.len(), &raw mut count))
+        c_bool(DisplaysListOnline(buffer.as_mut_ptr(), buffer.len(), &raw mut count))
     };
-    if !ok || count > displays.len() {
+    if !ok || count > buffer.len() {
         return None;
     }
 
-    displays.truncate(count);
-    Some(displays)
+    Some(SmallVec::from_slice(&buffer[..count]))
 }
 
 /// Returns whether the display is built-in (i.e. not an external monitor).

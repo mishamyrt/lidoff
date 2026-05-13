@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0](https://github.com/mishamyrt/lidoff/compare/v0.3.2..v0.4.0) - 2026-05-13
+
+### 🚀 Features
+
+- Add homebrew tap
+- Improve args parsing
+- Add keyboard backlight support
+- Add separate effects lock
+- Finalize skylight once
+- Avoid extra state read
+- Improve logging
+
+### 🐛 Bug Fixes
+
+- Reset invalid gamma backup to avoid leak
+- Rework brightness restore
+- Read homedir once
+
+### 🚜 Refactor
+
+- Commonize display resolving
+- Remove unused
+- Clean up
+- Rewrite to rust
+- Split crates
+- Rework lid sensor crate
+- Rework display crate
+- Split daemon and entry point
+- Rework logging
+- Use more efficient displays collecting
+- Avoid too long locks
+- Avoid extra display list call
+- Use instants for timeout
+- Align header name
+- Rework power monitor
+- Split lid monitor
+- Migrate to lunchd lib
+- Avoid multithread access to ffi
+- Improve error handling
+- Improve cli
+- Split error codes
+
+### 📚 Documentation
+
+- Add crates readme
+- Actualize readme
+- Update agents
+
+### ⚡ Performance
+
+- Use cached display id
+- Use smallvec for display list
+
 ## [0.3.2](https://github.com/mishamyrt/lidoff/compare/v0.3.1..v0.3.2) - 2026-02-12
 
 ### 🐛 Bug Fixes

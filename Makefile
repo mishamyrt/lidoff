@@ -30,7 +30,7 @@ check: test
 publish:
 	@sed -E 's/^version = "[^"]+"/version = "${VERSION}"/' Cargo.toml > Cargo.toml.tmp
 	@mv Cargo.toml.tmp Cargo.toml
-	@cargo update -p nanomiddleclick
+	@cargo update -p lidoff
 	@git add Makefile Cargo.toml Cargo.lock
 	@git commit -m "chore: release ${VERSION} 🔥"
 	@git tag "v${VERSION}"

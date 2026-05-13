@@ -2,103 +2,136 @@
     <img src="./docs/logo.svg" alt="lidoff logo" height="141">
 </p>
 
-[![](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg)](https://github.com/mishamyrt/lidoff/actions/workflows/build.yml)
+<p align="center">
+    <a href="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml"><img src="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
 
-Rust daemon with a minimal native C shim that turns off MacBook display and keyboard
-brightness and enables caffeinate when the lid is partially closed.
+`lidoff` is a macOS daemon for Apple Silicon MacBooks. It watches the lid angle, turns off the built-in display and keyboard backlight when the lid is partially closed, disables external displays, and keeps the machine awake with `caffeinate`.
 
-## What for?
+## Why
 
-- To start a long refactoring in Cursor/Claude Code, go for a walk and don't worry about your laptop going into sleep mode.
-- To listen to a podcast while falling asleep.
-- To set a movie/game to download overnight.
+`lidoff` is useful when you want the MacBook to keep working with the lid nearly closed:
 
-I noticed that I perform a frequent sequence of actions: start an amphetamine session, lower the brightness, then raise the brightness and end the session. Sometimes I forgot about the first step, which led to unexpected freezing of code refactoring with LLM.
+- Run a long refactoring or LLM coding session while you step away.
+- Keep audio playing without lighting the room.
+- Leave a download, build, or sync running overnight.
 
-When I discovered the ability to read the angle of the MacBook, I thought that this feature was not being used to its full potential. In standard mode, the sensor is used to determine the Boolean state “is the lid open”. Why not add an additional state?
+The idea is to add a middle state between "open" and "closed": when the lid is only partially closed, the laptop stays awake but the displays and keyboard backlight are dimmed to zero.
+
+## Features
+
+- Reads the MacBook lid angle instead of relying only on open/closed state.
+- Dims the built-in display and keyboard backlight to zero when the lid is partially closed.
+- Starts a `caffeinate` session while the partial-close state is active.
+- Restores saved brightness values when the lid opens or fully closes.
+- Disables and restores external displays when possible.
+- Installs as a per-user macOS LaunchAgent.
+
+## Requirements
+
+- MacBook Air or MacBook Pro with Apple Silicon (M2, M3, or M4).
+- macOS with access to the built-in lid angle sensor.
 
 ## Installation
 
-**Homebrew:**
+### Homebrew
 
 ```bash
 brew install mishamyrt/tap/lidoff
-lidoff --enable
+lidoff install
 ```
 
-**Quick install:**
+### Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mishamyrt/lidoff/master/install.sh | bash
-lidoff --enable
+lidoff install
 ```
 
-**From source:**
+The quick installer places the binary in `~/.local/bin`. Make sure that directory is in your `PATH`.
+
+### From Source
 
 ```bash
 git clone https://github.com/mishamyrt/lidoff.git
 cd lidoff
 rustup toolchain install stable
-make
-make install
-lidoff --enable
+cargo build --release --package lidoff
+mkdir -p "$HOME/.local/bin"
+install -m 755 target/release/lidoff "$HOME/.local/bin/lidoff"
+lidoff install
 ```
 
-**Development tools:**
+## Usage
+
+```text
+lidoff [OPTIONS] <COMMAND>
+
+Commands:
+  install    Install service as launch agent
+  uninstall  Uninstall service's launch agent
+  run        Start the monitor in the foreground
+
+Options:
+  -t, --threshold <degrees>  Lid angle threshold in range 10-60 degrees [default: 30]
+  -i, --interval <ms>        Polling interval in ms in range 50-5000 ms [default: 300]
+  -v, --verbose              Log current lid angle
+  -h, --help                 Print help
+  -V, --version              Print version
+```
+
+Options are global and must be passed before the command:
+
+```bash
+# Run in the foreground with default settings
+lidoff run
+
+# Run in the foreground and print lid angle updates
+lidoff --verbose run
+
+# Install LaunchAgent with a custom threshold and polling interval
+lidoff --threshold 25 --interval 500 install
+
+# Remove the LaunchAgent
+lidoff uninstall
+```
+
+## Behavior
+
+`lidoff` classifies lid angle into three states:
+
+- **Partially closed**: `5° <= angle < threshold`. Saves current brightness values, dims the built-in display and keyboard backlight to zero, disables external displays when possible, and starts `caffeinate`.
+- **Open**: `angle >= threshold`. Restores saved brightness values, restores external displays, and stops `caffeinate`.
+- **Fully closed**: `angle < 5°`. Restores saved brightness values, restores external displays, and stops `caffeinate`, allowing normal sleep behavior.
+
+External display shutdown uses the available macOS display controls and falls back where possible. Some monitors or connection types may not support full external brightness control.
+
+## Development
+
+The project is a Rust workspace under `crates/`:
+
+- `crates/lidoff` contains the CLI and LaunchAgent integration.
+- `crates/lidoff-daemon` contains monitor state management and runtime orchestration.
+- `crates/lidoff-display`, `crates/lidoff-lidsensor`, and `crates/lidoff-power` contain macOS integration shims.
+
+Useful commands:
+
+```bash
+cargo build --workspace
+make fmt
+make lint
+make test
+make check
+```
+
+Development tools:
 
 ```bash
 brew install llvm
 rustup component add rustfmt clippy
 ```
 
-Add Homebrew LLVM to your shell `PATH` if you want to invoke `clang-tidy` and `scan-build` directly. The `Makefile` also auto-detects `$(brew --prefix llvm)/bin` for local runs and CI.
+## License
 
-## Usage
-
-```
-lidoff [-t threshold] [-i interval]  Run daemon
-lidoff --enable [-t threshold]      Install as LaunchAgent
-lidoff --disable                   Remove LaunchAgent
-```
-
-**Options:**
-
-- `-t, --threshold <degrees>` — Lid angle threshold (default: 30)
-- `-i, --interval <ms>` — Polling interval (default: 300)
-- `-v, --verbose` — Log current lid angle
-
-## How it works
-
-The daemon monitors lid angle and manages display and keyboard brightness with caffeinate session:
-
-- **Lid partially closed** (angle < threshold, but ≥ 5°): saves current display and keyboard brightness, sets both to 0, starts a caffeinate session to prevent sleep, and disables external displays
-- **Lid opened** (angle ≥ threshold): restores saved brightness values, restores external display state, and ends caffeinate session
-- **Lid fully closed** (angle < 5°): restores brightness values, restores external display state, and ends caffeinate session, allowing normal sleep behavior
-
-External display shutdown tries two methods in priority order:
-
-- **Skylight API** — disables the display at the system level
-- **DDC/CI + gamma fallback** — sets brightness/contrast to 0 and zeros gamma
-
-Some monitors or ports may not support DDC/CI, in which case only gamma is applied.
-
-This prevents the issue where fully closing the lid would leave the display at zero brightness after unlock.
-
-## Requirements
-
-- MacBook Air or MacBook Pro with Apple Silicon (M2, M3, M4)
-
-## Development
-
-The codebase now lives under `rust/`. Runtime orchestration is implemented in Rust, while the
-remaining macOS integration shim is kept in `rust/macos`.
-
-Quality targets:
-
-- `make` — builds the Rust daemon into `build/lidoff`
-- `make fmt` — runs `cargo fmt` and `clang-format`
-- `make lint` — runs `cargo clippy` and `clang-tidy`
-- `make test` — runs Rust unit tests
-
-The current codebase still has deprecation warnings around `CGDisplayIOServicePort`. Those warnings
-do not fail the lint/static-analysis gates and should be cleaned up in a separate follow-up change.
+MIT

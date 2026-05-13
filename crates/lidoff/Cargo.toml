@@ -1,7 +1,13 @@
 [package]
 name = "lidoff"
-version = "0.3.2"
-edition = "2024"
+description = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
 
 [dependencies]
 clap = { workspace = true }

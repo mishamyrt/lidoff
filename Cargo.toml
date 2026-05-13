@@ -5,6 +5,11 @@ resolver = "2"
 [workspace.package]
 version = "0.4.0"
 edition = "2024"
+description = "Third state for the MacBook lid"
+homepage = "https://github.com/mishamyrt/lidoff"
+documentation = "https://github.com/mishamyrt/lidoff"
+repository = "https://github.com/mishamyrt/lidoff"
+authors = ["Mikhael Khrustik <misha@myrt.co>"]
 license = "MIT"
 
 [workspace.dependencies]
@@ -61,3 +66,8 @@ lto = "fat"
 codegen-units = 1
 strip = true
 opt-level = "z"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

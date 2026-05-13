@@ -215,7 +215,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "lidoff"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "lidoff-daemon",
@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-daemon"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bincode",
  "lidoff-display",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-display"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "cc",
  "serde",
@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-lidsensor"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "cc",
  "thiserror",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-power"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "cc",
  "thiserror",

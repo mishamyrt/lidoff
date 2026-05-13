@@ -1,4 +1,4 @@
-VERSION = 0.4.0
+VERSION = 0.4.1
 
 .PHONY: all build clean lint fmt test check publish
 

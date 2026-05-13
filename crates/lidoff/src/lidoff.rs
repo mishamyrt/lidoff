@@ -102,6 +102,9 @@ fn build_agent(threshold: u32, interval: u64, bin_path: &Path) -> Result<LaunchA
         .arg(threshold.to_string())
         .arg("--interval".to_string())
         .arg(interval.to_string())
+        .arg("run")
+        .stdout_path("/tmp/lidoff.stdout")
+        .stderr_path("/tmp/lidoff.stderr")
         .keep_alive(KeepAlive::Always)
         .run_at_load(true)
         .build()?;

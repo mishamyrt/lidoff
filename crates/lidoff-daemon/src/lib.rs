@@ -33,10 +33,17 @@ pub fn run(config: &DaemonConfig) -> bool {
     logging::set_verbose(config.verbose);
     install_signal_handlers();
 
+    logging::info!(
+        "starting lidoff daemon (threshold={}°, interval={}ms)",
+        config.threshold,
+        config.interval_ms
+    );
+
     let Ok(mut lid_sensor) = lidoff_lidsensor::LidSensor::new() else {
         logging::error!("failed to initialize lid sensor");
         return false;
     };
+    logging::info!("lid sensor initialized");
 
     let monitor_config = monitor::MonitorConfig {
         threshold: config.threshold,

@@ -13,17 +13,17 @@ pub(crate) fn verbose_enabled() -> bool {
 
 #[allow(clippy::print_stdout)]
 pub(crate) fn info_args(args: fmt::Arguments<'_>) {
-    println!("lidoff[info]: {args}");
+    println!("[info]: {args}");
 }
 
 #[allow(clippy::print_stderr)]
 pub(crate) fn error_args(args: fmt::Arguments<'_>) {
-    eprintln!("lidoff[error]: {args}");
+    eprintln!("[error]: {args}");
 }
 
 #[allow(clippy::print_stdout)]
 pub(crate) fn debug_args(args: fmt::Arguments<'_>) {
-    println!("lidoff[debug]: {args}");
+    println!("[debug]: {args}");
 }
 
 macro_rules! info {

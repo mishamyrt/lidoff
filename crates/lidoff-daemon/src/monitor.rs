@@ -16,7 +16,7 @@ use lidoff_power::PowerObserver;
 use self::effects::{execute_monitor_action, restore_display_state};
 use self::persistence::{persist_recovery_state, recover_state_if_needed};
 use self::power_events::{handle_did_wake, handle_will_sleep, set_power_state};
-use self::state::{MonitorAction, MonitorState, lock_state};
+use self::state::{LidState, MonitorAction, MonitorState, lock_state};
 use self::transitions::{
     handle_fully_closed_locked, handle_open_locked, handle_partially_closed_locked,
     lid_state_for_angle,
@@ -78,6 +78,20 @@ pub(crate) fn run(
             } else {
                 let lid_state = lid_state_for_angle(angle, config.threshold);
                 let state_changed = state.last_lid_state != Some(lid_state);
+                if state_changed {
+                    let prev = match state.last_lid_state {
+                        Some(LidState::FullyClosed) => "fully closed",
+                        Some(LidState::PartiallyClosed) => "partially closed",
+                        Some(LidState::Open) => "open",
+                        None => "unknown",
+                    };
+                    let next = match lid_state {
+                        LidState::FullyClosed => "fully closed",
+                        LidState::PartiallyClosed => "partially closed",
+                        LidState::Open => "open",
+                    };
+                    logging::info!("lid state changed: {} -> {}", prev, next);
+                }
                 let action = match lid_state {
                     state::LidState::FullyClosed => {
                         handle_fully_closed_locked(&mut state, now, state_changed)

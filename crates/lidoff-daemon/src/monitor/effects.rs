@@ -115,7 +115,7 @@ fn restore_keyboard_backlight_state(
     };
 
     if log_restore {
-        logging::info!("restoring keyboard backlight to {:.2}", saved_state.brightness);
+        logging::debug!("restoring keyboard backlight to {:.2}", saved_state.brightness);
     }
 
     let mut keyboard = KeyboardBacklight::new();
@@ -183,7 +183,7 @@ fn restore_external_display_state(shared_state: &SharedMonitorState) -> bool {
     let mut external = ExternalDisplays::new();
     match external.restore_state(saved_state.clone()) {
         Ok(()) => {
-            logging::info!("restored external displays");
+            logging::debug!("restored external displays");
             let mut state = lock_state(shared_state);
             if state.external_display_state.as_ref() == Some(&saved_state) {
                 state.external_display_state = None;
@@ -223,7 +223,7 @@ fn apply_internal_display_state(
     };
 
     if log_restore {
-        logging::info!("{action} to {:.2}", saved_state.brightness);
+        logging::debug!("{action} to {:.2}", saved_state.brightness);
     }
 
     let mut internal = InternalDisplay::new();
@@ -297,7 +297,7 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
             return;
         }
 
-        logging::info!("dimming display to 0.0");
+        logging::debug!("dimming display to 0.0");
         changed = true;
     }
 
@@ -352,7 +352,7 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
         return;
     }
 
-    logging::info!("dimming display to 0.0");
+    logging::debug!("dimming display to 0.0");
 
     capture_and_disable_keyboard_backlight_state(shared_state);
 
@@ -405,7 +405,7 @@ fn handle_keyboard_backlight_disable_result(
 ) -> bool {
     match result {
         Ok(()) => {
-            logging::info!("dimming keyboard backlight to 0.0");
+            logging::debug!("dimming keyboard backlight to 0.0");
             true
         }
         Err(KeyboardBacklightError::AlreadyDisabled) => false,
@@ -425,7 +425,7 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
     }
 
     if state.last_nonzero_brightness > 0.0 {
-        logging::info!(
+        logging::debug!(
             "brightness is {:.2}; using last known value {:.2} for restore",
             current_brightness,
             state.last_nonzero_brightness

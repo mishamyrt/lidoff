@@ -83,15 +83,20 @@ fn recovery_cache_dir() -> Result<PathBuf> {
 
 fn executable_path() -> io::Result<PathBuf> {
     let exec_path = std::env::current_exe()?;
-    let real_path = match fs::read_link(&exec_path) {
-        Ok(path) => path,
-        Err(_) => exec_path,
+    resolve_executable_path(&exec_path)
+}
+
+fn resolve_executable_path(exec_path: &Path) -> io::Result<PathBuf> {
+    let real_path = match fs::read_link(exec_path) {
+        Ok(path) if path.is_absolute() => path,
+        Ok(path) => exec_path.parent().unwrap_or(Path::new("")).join(path),
+        Err(_) => exec_path.to_path_buf(),
     };
 
     if real_path.is_absolute() {
-        Ok(real_path)
+        fs::canonicalize(real_path)
     } else {
-        Ok(std::env::current_dir()?.join(real_path))
+        fs::canonicalize(std::env::current_dir()?.join(real_path))
     }
 }
 
@@ -110,4 +115,59 @@ fn build_agent(threshold: u32, interval: u64, bin_path: &Path) -> Result<LaunchA
         .build()?;
 
     Ok(agent)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::path::{Path, PathBuf};
+    use std::process;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::resolve_executable_path;
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let path =
+                env::temp_dir().join(format!("lidoff-test-{}-{timestamp}", process::id()));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn resolves_relative_symlink_from_symlink_directory() {
+        let temp = TestDir::new();
+        let homebrew = temp.path().join("Homebrew");
+        let bin_dir = homebrew.join("bin");
+        let cellar_bin_dir = homebrew.join("Cellar/lidoff/0.4.0/bin");
+        let executable = cellar_bin_dir.join("lidoff");
+        let symlink_path = bin_dir.join("lidoff");
+
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(&cellar_bin_dir).unwrap();
+        fs::write(&executable, b"lidoff").unwrap();
+        symlink("../Cellar/lidoff/0.4.0/bin/lidoff", &symlink_path).unwrap();
+
+        let resolved = resolve_executable_path(&symlink_path).unwrap();
+
+        assert_eq!(resolved, fs::canonicalize(&executable).unwrap());
+    }
 }

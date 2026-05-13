@@ -63,7 +63,7 @@ impl Caffeinate {
     pub fn stop(&mut self) -> Result<(), CaffeinateError> {
         match unsafe { CaffeinateStop() } {
             0 => Ok(()),
-            2 => Err(CaffeinateError::NotActive),
+            3 => Err(CaffeinateError::NotActive),
             _ => Err(CaffeinateError::StopFailed),
         }
     }

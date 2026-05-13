@@ -8,11 +8,12 @@ static bool caffeinate_active = false;
 #define CAFFEINATE_ASSERTION_NAME CFSTR("lidoff")
 #define CAFFEINATE_STATUS_SUCCESS 0
 #define CAFFEINATE_STATUS_FAILURE 1
-#define CAFFEINATE_ACTIVE 2
+#define CAFFEINATE_ALREADY_ACTIVE 2
+#define CAFFEINATE_NOT_ACTIVE 3
 
 uint8_t CaffeinateStart(void) {
     if (caffeinate_active) {
-        return CAFFEINATE_ACTIVE;
+        return CAFFEINATE_ALREADY_ACTIVE;
     }
 
     IOReturn result =
@@ -28,7 +29,7 @@ uint8_t CaffeinateStart(void) {
 
 uint8_t CaffeinateStop(void) {
     if (!caffeinate_active) {
-        return CAFFEINATE_ACTIVE;
+        return CAFFEINATE_NOT_ACTIVE;
     }
 
     IOReturn result = IOPMAssertionRelease(assertion_id);

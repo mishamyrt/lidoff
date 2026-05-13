@@ -1,81 +1,99 @@
-mod args;
-mod launch_agent;
+mod lidoff;
 
-use args::{parse, print_usage};
-use std::path::PathBuf;
+use clap::{Parser, Subcommand};
+use lidoff_daemon::{
+    MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE,
+};
 
-const CACHE_RELATIVE_PATH: &str = "Library/Caches/co.myrt.lidoff";
+use crate::lidoff::Lidoff;
 
-fn main() {
-    let exit_code = run();
-    std::process::exit(exit_code);
+#[derive(Parser, Debug)]
+#[command(
+    name = "lidoff",
+    version,
+    about = "MacBook lid angle display and keyboard brightness daemon",
+    long_about = None,
+    after_help = behavior_help()
+)]
+struct Cli {
+    #[arg(
+        short = 't',
+        long = "threshold",
+        default_value_t = MONITOR_DEFAULT_THRESHOLD,
+        value_parser = parse_threshold,
+        value_name = "degrees",
+        help = "Lid angle threshold in range 10-60 degrees"
+    )]
+    threshold: u32,
+
+    #[arg(
+        short = 'i',
+        long = "interval",
+        default_value_t = MONITOR_DEFAULT_INTERVAL_MS,
+        value_parser = parse_interval,
+        value_name = "ms",
+        help = "Polling interval in ms in range 50-5000 ms"
+    )]
+    interval_ms: u64,
+
+    #[arg(short = 'v', long = "verbose", help = "Log current lid angle")]
+    verbose: bool,
+
+    #[clap(subcommand)]
+    command: Command,
 }
 
-#[allow(clippy::print_stdout)]
+#[derive(Debug, Subcommand, Clone)]
+enum Command {
+    /// Install service as launch agent
+    Install,
+    /// Uninstall service's launch agent
+    Uninstall,
+    /// Start the monitor in the foreground
+    Run,
+}
+
+fn parse_threshold(value: &str) -> Result<u32, String> {
+    let threshold =
+        value.parse::<u32>().map_err(|_| format!("invalid threshold: {value} (10-60)"))?;
+    if !(10..=60).contains(&threshold) {
+        return Err(format!("invalid threshold: {threshold} (10-60)"));
+    }
+    Ok(threshold)
+}
+
+fn parse_interval(value: &str) -> Result<u64, String> {
+    let interval_ms =
+        value.parse::<u64>().map_err(|_| format!("invalid interval: {value} (50-5000)"))?;
+    if !(50..=5_000).contains(&interval_ms) {
+        return Err(format!("invalid interval: {interval_ms} (50-5000)"));
+    }
+    Ok(interval_ms)
+}
+
+fn behavior_help() -> String {
+    format!(
+        "Behavior:\n  angle < {MONITOR_FULL_CLOSE_ANGLE}: fully closed, restore brightness values and end caffeinate\n  angle < threshold: save brightness values, set them to 0, start caffeinate\n  angle >= threshold: restore saved brightness values, end caffeinate"
+    )
+}
+
 #[allow(clippy::print_stderr)]
-fn run() -> i32 {
-    let mut args = std::env::args();
-    let program_name = args.next().unwrap_or_else(|| "lidoff".to_owned());
-    let raw_args = args.collect::<Vec<_>>();
+fn main() -> std::process::ExitCode {
+    let cli = Cli::parse();
 
-    if raw_args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        print_usage(&program_name);
-        return 0;
-    }
+    let lidoff = Lidoff::new(cli.threshold, cli.interval_ms, cli.verbose);
 
-    if raw_args.iter().any(|arg| arg == "--version") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
-        return 0;
-    }
-
-    let parsed = match parse(raw_args) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            eprintln!("lidoff: {}", error.message);
-            if error.print_usage {
-                print_usage(&program_name);
-            }
-            return 1;
-        }
+    let result = match cli.command {
+        Command::Install => lidoff.install(),
+        Command::Uninstall => lidoff.uninstall(),
+        Command::Run => lidoff.run_monitor(),
     };
 
-    if parsed.do_uninstall {
-        if let Err(error) = launch_agent::uninstall() {
-            eprintln!("failed to uninstall launch agent: {error}");
-            return 1;
-        }
-        return 0;
-    }
-
-    if parsed.do_install {
-        if let Err(error) = launch_agent::install(parsed.threshold, parsed.interval_ms) {
-            eprintln!("failed to install launch agent: {error}");
-            return 1;
-        }
-        return 0;
-    }
-
-    let recovery_cache_dir = match recovery_cache_dir() {
-        Ok(path) => path,
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lidoff: {error}");
-            return 1;
+            std::process::ExitCode::FAILURE
         }
-    };
-
-    let config = lidoff_daemon::DaemonConfig {
-        threshold: parsed.threshold,
-        interval_ms: parsed.interval_ms,
-        verbose: parsed.verbose,
-        recovery_cache_dir,
-    };
-
-    i32::from(lidoff_daemon::run(&config))
-}
-
-fn recovery_cache_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set".to_owned())?;
-    Ok(home.join(CACHE_RELATIVE_PATH))
+    }
 }

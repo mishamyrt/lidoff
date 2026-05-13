@@ -4,6 +4,7 @@ version = "0.3.2"
 edition = "2024"
 
 [dependencies]
+clap = { workspace = true }
 lidoff-daemon = { workspace = true }
 lunchd = { workspace = true }
 thiserror = { workspace = true }

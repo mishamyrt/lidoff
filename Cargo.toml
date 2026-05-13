@@ -15,6 +15,7 @@ lidoff-lidsensor = { path = "./crates/lidoff-lidsensor" }
 lidoff-power = { path = "./crates/lidoff-power" }
 
 bincode = "1.3"
+clap = { version = "4.5", features = ["derive"] }
 serde = "1.0"
 smallvec = { version = "1.15", features = ["serde"] }
 thiserror = "2"

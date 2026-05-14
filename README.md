@@ -3,8 +3,15 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml"><img src="https://github.com/mishamyrt/lidoff/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
-    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+    <a href="https://github.com/mishamyrt/lidoff/actions/workflows/qa.yml">
+        <img src="https://github.com/mishamyrt/lidoff/actions/workflows/qa.yml/badge.svg" alt="Build status" />
+    </a>
+    <a href="https://github.com/mishamyrt/lidoff/releases/latest">
+        <img src="https://img.shields.io/github/v/tag/mishamyrt/lidoff?label=version"
+    </a>
+    <a href="./LICENSE">
+        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" />
+    </a>
 </p>
 
 `lidoff` is a macOS daemon for Apple Silicon MacBooks. It watches the lid angle, turns off the built-in display and keyboard backlight when the lid is partially closed, disables external displays, and keeps the machine awake with `caffeinate`.

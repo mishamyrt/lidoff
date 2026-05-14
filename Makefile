@@ -21,7 +21,7 @@ fmt:
 		| xargs clang-format -i
 
 test:
-	@cargo test --workspace
+	@cargo test
 
 check: test
 	@cargo fmt --all --check

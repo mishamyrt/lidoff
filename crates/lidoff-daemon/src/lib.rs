@@ -50,8 +50,7 @@ pub fn run(config: &DaemonConfig) -> bool {
         interval_ms: config.interval_ms,
         recovery_cache_dir: config.recovery_cache_dir.clone(),
     };
-    monitor::run(&monitor_config, &SHOULD_RUN, &mut lid_sensor);
-    true
+    monitor::run(&monitor_config, &SHOULD_RUN, &mut lid_sensor).is_ok()
 }
 
 fn install_signal_handlers() {

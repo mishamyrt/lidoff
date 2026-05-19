@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use lidoff_lidsensor::LidSensor;
-use lidoff_power::PowerObserver;
+use lidoff_power::{PowerNotifierError, PowerObserver};
 
 use self::effects::{execute_monitor_action, restore_display_state};
 use self::persistence::{persist_recovery_state, recover_state_if_needed};
@@ -44,7 +44,7 @@ pub(crate) fn run(
     config: &MonitorConfig,
     should_run: &AtomicBool,
     lid_sensor: &mut LidSensor,
-) {
+) -> Result<(), PowerNotifierError> {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
     set_power_state(shared_state.clone(), config.recovery_cache_dir.clone());
 
@@ -53,7 +53,7 @@ pub(crate) fn run(
     let mut observer = PowerObserver::new();
     if let Err(e) = observer.start(handle_will_sleep, handle_did_wake) {
         logging::error!("failed to start power observer: {e}");
-        return;
+        return Err(e);
     }
 
     let interval = Duration::from_millis(config.interval_ms);
@@ -115,4 +115,5 @@ pub(crate) fn run(
 
     restore_display_state(&shared_state, false, true);
     persist_recovery_state(&shared_state, &config.recovery_cache_dir);
+    Ok(())
 }

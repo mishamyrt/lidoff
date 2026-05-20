@@ -26,6 +26,8 @@
 
 The idea is to add a middle state between "open" and "closed": when the lid is only partially closed, the laptop stays awake but the displays and keyboard backlight are dimmed to zero.
 
+https://github.com/user-attachments/assets/86740896-9a4b-4e2e-a616-a1353a61575c
+
 ## Features
 
 - Reads the MacBook lid angle instead of relying only on open/closed state.

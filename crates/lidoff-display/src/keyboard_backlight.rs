@@ -59,7 +59,7 @@ impl DisplayController for KeyboardBacklight {
         Ok(KeyboardBacklightState { brightness })
     }
 
-    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {
+    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
         if !keyboard_backlight_set(state.brightness.clamp(0.0, 1.0)) {
             return Err(KeyboardBacklightError::BrightnessFailed);
         }

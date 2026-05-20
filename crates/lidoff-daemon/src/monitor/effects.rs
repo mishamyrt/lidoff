@@ -119,7 +119,7 @@ fn restore_keyboard_backlight_state(
     }
 
     let mut keyboard = KeyboardBacklight::new();
-    if keyboard.restore_state(saved_state).is_ok() {
+    if keyboard.restore_state(&saved_state).is_ok() {
         let mut state = lock_state(shared_state);
         if state.keyboard_backlight_state == Some(saved_state) && clear_after_restore {
             state.keyboard_backlight_state = None;
@@ -176,22 +176,19 @@ fn stop_caffeinate(shared_state: &SharedMonitorState) -> bool {
 }
 
 fn restore_external_display_state(shared_state: &SharedMonitorState) -> bool {
-    let Some(saved_state) = lock_state(shared_state).external_display_state.clone() else {
+    let Some(saved_state) = lock_state(shared_state).external_display_state.take() else {
         return false;
     };
 
     let mut external = ExternalDisplays::new();
-    match external.restore_state(saved_state.clone()) {
+    match external.restore_state(&saved_state) {
         Ok(()) => {
             logging::debug!("restored external displays");
-            let mut state = lock_state(shared_state);
-            if state.external_display_state.as_ref() == Some(&saved_state) {
-                state.external_display_state = None;
-            }
             true
         }
         Err(error) => {
             logging::error!("external display restore incomplete: {error}");
+            lock_state(shared_state).external_display_state = Some(saved_state);
             false
         }
     }
@@ -227,7 +224,7 @@ fn apply_internal_display_state(
     }
 
     let mut internal = InternalDisplay::new();
-    if internal.restore_state(saved_state).is_ok() {
+    if internal.restore_state(&saved_state).is_ok() {
         let mut state = lock_state(shared_state);
         if state.internal_display_state == Some(saved_state) {
             state.last_nonzero_brightness = saved_state.brightness;

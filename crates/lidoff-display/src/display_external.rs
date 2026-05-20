@@ -101,7 +101,7 @@ impl DisplayController for ExternalDisplays {
         copy_state_with_displays(&displays)
     }
 
-    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {
+    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
         if state.skylight_display_ids.is_empty() {
             EXTERNAL_DISPLAYS_DISABLED.store(false, Ordering::Relaxed);
             return Ok(());

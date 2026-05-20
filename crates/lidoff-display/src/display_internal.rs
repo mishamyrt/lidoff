@@ -59,7 +59,7 @@ impl DisplayController for InternalDisplay {
         Ok(InternalDisplayState { brightness })
     }
 
-    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error> {
+    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
         let brightness = state.brightness.clamp(0.0, 1.0);
 
         if !brightness_set(brightness) {

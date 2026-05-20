@@ -29,5 +29,5 @@ pub trait DisplayController {
     fn get_state(&mut self) -> Result<Self::State, Self::Error>;
 
     /// Restores the display to the given state.
-    fn restore_state(&mut self, state: Self::State) -> Result<(), Self::Error>;
+    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error>;
 }

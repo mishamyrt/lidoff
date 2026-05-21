@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2](https://github.com/mishamyrt/lidoff/compare/v0.4.1..v0.4.2) - 2026-05-21
+
+### 🐛 Bug Fixes
+
+- Handle power monitor error
+- Correctly restore keyboard backlight
+
+### 📚 Documentation
+
+- Add version badge
+- Add demo
+- Animate logo
+
+### ⚡ Performance
+
+- Avoid state copy
+
 ## [0.4.1](https://github.com/mishamyrt/lidoff/compare/v0.4.0..v0.4.1) - 2026-05-13
 
 ### 🐛 Bug Fixes

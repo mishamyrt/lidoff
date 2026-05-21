@@ -93,8 +93,28 @@ float KeyboardBacklightGet(void) {
         return -1.0f;
     }
 
+    BOOL was_suspended = false;
+    SEL is_dimmed_selector = sel_registerName("isBacklightDimmedOnKeyboard:");
+    SEL suspend_selector = sel_registerName("suspendIdleDimming:forKeyboard:");
+    if (class_getInstanceMethod(object_getClass(client), is_dimmed_selector) &&
+        class_getInstanceMethod(object_getClass(client), suspend_selector)) {
+        BOOL is_dimmed = ((BOOL (*)(id, SEL, unsigned long long))objc_msgSend)(
+            client, is_dimmed_selector, keyboard_id);
+        if (is_dimmed) {
+            ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
+                client, suspend_selector, (BOOL)1, keyboard_id);
+            was_suspended = true;
+        }
+    }
+
     float brightness = ((float (*)(id, SEL, unsigned long long))objc_msgSend)(
         client, brightness_selector, keyboard_id);
+
+    if (was_suspended) {
+        ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
+            client, suspend_selector, (BOOL)0, keyboard_id);
+    }
+
     releaseObject(client);
     return brightness;
 }

@@ -1,5 +1,7 @@
 mod lidoff;
 
+use std::error::Error;
+
 use clap::{Parser, Subcommand};
 use lidoff_daemon::{
     MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE,
@@ -93,6 +95,9 @@ fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lidoff: {error}");
+            if let Some(source_err) = error.source() {
+                eprintln!("{source_err}");
+            }
             std::process::ExitCode::FAILURE
         }
     }

@@ -262,9 +262,9 @@ dependencies = [
 
 [[package]]
 name = "lunchd"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d41ac4d231aeaadac7ee22563aa0216eb5506d79a64427f4fbc7f777ed55a1f0"
+checksum = "467a1b8bfe41e18798c32a8b181ce4774088109f969dc1ac9e300c4f024d8cef"
 dependencies = [
  "derive_builder",
  "thiserror",

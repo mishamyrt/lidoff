@@ -24,11 +24,25 @@ pub(crate) enum LidoffError {
     #[error("failed to uninstall launch agent")]
     Uninstall(#[source] lunchd::AgentError),
 
+    #[error("failed to get launch agent status")]
+    Status(#[source] lunchd::AgentError),
+
     #[error("home directory not found")]
     HomeNotFound,
 
     #[error("failed to run monitor")]
     RunMonitor,
+
+    #[error("service is already installed")]
+    AlreadyInstalled,
+
+    #[error("service is not installed")]
+    NotInstalled,
+}
+
+pub(crate) enum CommandOutcome {
+    Silent,
+    Message(&'static str),
 }
 
 type Result<T> = std::result::Result<T, LidoffError>;
@@ -44,17 +58,38 @@ impl Lidoff {
         Self { threshold, interval, verbose }
     }
 
-    pub(crate) fn install(&self) -> Result<()> {
+    pub(crate) fn install(&self) -> Result<CommandOutcome> {
         let agent = self.launch_agent()?;
-        agent.install().map_err(LidoffError::Install)
+        if agent.exists() && agent.is_loaded().map_err(LidoffError::Install)? {
+            return Err(LidoffError::AlreadyInstalled);
+        }
+
+        agent.install().map_err(LidoffError::Install)?;
+        Ok(CommandOutcome::Message("service is successfully installed"))
     }
 
-    pub(crate) fn uninstall(&self) -> Result<()> {
+    pub(crate) fn uninstall(&self) -> Result<CommandOutcome> {
         let agent = self.launch_agent()?;
-        agent.uninstall().map_err(LidoffError::Uninstall)
+        if !agent.exists() && !agent.is_loaded().map_err(LidoffError::Uninstall)? {
+            return Err(LidoffError::NotInstalled);
+        }
+
+        agent.uninstall().map_err(LidoffError::Uninstall)?;
+        Ok(CommandOutcome::Message("service is successfully uninstalled"))
     }
 
-    pub(crate) fn run_monitor(&self) -> Result<()> {
+    pub(crate) fn get_status(&self) -> Result<CommandOutcome> {
+        let agent = self.launch_agent()?;
+        if agent.exists() && agent.is_loaded().map_err(LidoffError::Status)? {
+            Ok(CommandOutcome::Message("service is running"))
+        } else if agent.exists() {
+            Ok(CommandOutcome::Message("service installed but not running"))
+        } else {
+            Ok(CommandOutcome::Message("service not installed"))
+        }
+    }
+
+    pub(crate) fn run_monitor(&self) -> Result<CommandOutcome> {
         let recovery_cache_dir = recovery_cache_dir()?;
         let config = DaemonConfig {
             threshold: self.threshold,
@@ -67,7 +102,7 @@ impl Lidoff {
             return Err(LidoffError::RunMonitor);
         }
 
-        Ok(())
+        Ok(CommandOutcome::Silent)
     }
 
     fn launch_agent(&self) -> Result<LaunchAgent> {
@@ -124,6 +159,7 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::{Path, PathBuf};
     use std::process;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::resolve_executable_path;
@@ -132,11 +168,14 @@ mod tests {
         path: PathBuf,
     }
 
+    static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
     impl TestDir {
         fn new() -> Self {
+            let id = NEXT_TEST_DIR_ID.fetch_add(1, Ordering::Relaxed);
             let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-            let path =
-                env::temp_dir().join(format!("lidoff-test-{}-{timestamp}", process::id()));
+            let path = env::temp_dir()
+                .join(format!("lidoff-test-{}-{timestamp}-{id}", process::id()));
             fs::create_dir_all(&path).unwrap();
             Self { path }
         }

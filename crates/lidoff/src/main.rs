@@ -7,7 +7,7 @@ use lidoff_daemon::{
     MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE,
 };
 
-use crate::lidoff::Lidoff;
+use crate::lidoff::{CommandOutcome, Lidoff};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -51,6 +51,8 @@ enum Command {
     Install,
     /// Uninstall service's launch agent
     Uninstall,
+    /// Check service status
+    Status,
     /// Start the monitor in the foreground
     Run,
 }
@@ -79,7 +81,7 @@ fn behavior_help() -> String {
     )
 }
 
-#[allow(clippy::print_stderr)]
+#[allow(clippy::print_stderr, clippy::print_stdout)]
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
 
@@ -89,10 +91,15 @@ fn main() -> std::process::ExitCode {
         Command::Install => lidoff.install(),
         Command::Uninstall => lidoff.uninstall(),
         Command::Run => lidoff.run_monitor(),
+        Command::Status => lidoff.get_status(),
     };
 
     match result {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(CommandOutcome::Silent) => std::process::ExitCode::SUCCESS,
+        Ok(CommandOutcome::Message(message)) => {
+            println!("{message}");
+            std::process::ExitCode::SUCCESS
+        }
         Err(error) => {
             eprintln!("lidoff: {error}");
             if let Some(source_err) = error.source() {

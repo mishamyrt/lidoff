@@ -24,7 +24,7 @@ clap = { version = "4.5", features = ["derive"] }
 serde = "1.0"
 smallvec = { version = "1.15", features = ["serde"] }
 thiserror = "2"
-lunchd = "0.1.1"
+lunchd = "0.2.0"
 
 [workspace.lints.rust]
 unreachable_pub = "warn"

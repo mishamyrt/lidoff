@@ -5,6 +5,9 @@ use smallvec::SmallVec;
 unsafe extern "C" {
     fn BrightnessGet() -> f32;
     fn BrightnessSet(brightness: f32) -> u8;
+    fn CursorIsLocked() -> u8;
+    fn CursorLock() -> u8;
+    fn CursorUnlock() -> u8;
     fn KeyboardBacklightGet() -> f32;
     fn KeyboardBacklightSet(brightness: f32) -> u8;
 }
@@ -27,6 +30,21 @@ pub(crate) fn keyboard_backlight_get() -> f32 {
 /// Sets the keyboard backlight brightness level.
 pub(crate) fn keyboard_backlight_set(brightness: f32) -> bool {
     unsafe { KeyboardBacklightSet(brightness) != 0 }
+}
+
+/// Disconnects mouse movement from the system cursor.
+pub(crate) fn cursor_lock() -> bool {
+    unsafe { CursorLock() != 0 }
+}
+
+/// Reconnects mouse movement to the system cursor.
+pub(crate) fn cursor_unlock() -> bool {
+    unsafe { CursorUnlock() != 0 }
+}
+
+/// Returns whether this process has disconnected mouse movement from the cursor.
+pub(crate) fn cursor_is_locked() -> bool {
+    unsafe { CursorIsLocked() != 0 }
 }
 
 /* Displays */

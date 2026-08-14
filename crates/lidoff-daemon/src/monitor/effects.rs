@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use lidoff_display::{
-    DisplayController, ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplays,
-    InternalDisplay, InternalDisplayError, InternalDisplayState, KeyboardBacklight,
-    KeyboardBacklightError, KeyboardBacklightState,
+    Cursor, CursorError, DisplayController, ExternalDisplayDisableResult,
+    ExternalDisplayError, ExternalDisplays, InternalDisplay, InternalDisplayError,
+    InternalDisplayState, KeyboardBacklight, KeyboardBacklightError, KeyboardBacklightState,
 };
 use lidoff_power::{Caffeinate, CaffeinateError};
 
@@ -76,6 +76,7 @@ fn restore_display_state_locked(
     log_restore: bool,
     clear_internal_after_restore: bool,
 ) {
+    unlock_cursor();
     restore_external_display_state(shared_state);
     restore_keyboard_backlight_state(shared_state, log_restore, true);
     restore_internal_display_state(shared_state, log_restore, clear_internal_after_restore);
@@ -94,6 +95,7 @@ fn prepare_display_state_for_sleep_locked(
     shared_state: &SharedMonitorState,
     log_restore: bool,
 ) {
+    unlock_cursor();
     restore_keyboard_backlight_state(shared_state, log_restore, false);
     apply_internal_display_state(
         shared_state,
@@ -302,6 +304,10 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
         changed = true;
     }
 
+    if lock_cursor() {
+        changed = true;
+    }
+
     let mut external = ExternalDisplays::new();
     if lock_state(shared_state).external_display_state.is_none()
         && !external.is_disabled()
@@ -352,10 +358,10 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
     logging::debug!("dimming display to 0.0");
 
     capture_and_disable_keyboard_backlight_state(shared_state);
-
     capture_and_disable_external_display_state(shared_state);
     start_caffeinate(shared_state);
     persist_recovery_state(shared_state, recovery_cache_dir);
+    lock_cursor();
 }
 
 fn clear_pending_display_state(shared_state: &SharedMonitorState) {
@@ -410,6 +416,36 @@ fn handle_keyboard_backlight_disable_result(
             logging::error!("failed to dim keyboard backlight: {error}");
             let mut state = lock_state(shared_state);
             state.keyboard_backlight_state = None;
+            false
+        }
+    }
+}
+
+fn lock_cursor() -> bool {
+    let mut cursor = Cursor::new();
+    match cursor.lock() {
+        Ok(()) => {
+            logging::debug!("locked cursor movement");
+            true
+        }
+        Err(CursorError::AlreadyLocked) => false,
+        Err(error) => {
+            logging::error!("failed to lock cursor movement: {error}");
+            false
+        }
+    }
+}
+
+fn unlock_cursor() -> bool {
+    let mut cursor = Cursor::new();
+    match cursor.unlock() {
+        Ok(()) => {
+            logging::debug!("unlocked cursor movement");
+            true
+        }
+        Err(CursorError::AlreadyUnlocked) => false,
+        Err(error) => {
+            logging::error!("failed to unlock cursor movement: {error}");
             false
         }
     }

@@ -2,7 +2,7 @@
 
 Runtime orchestration for lid-angle driven display and power behavior.
 
-This crate owns the monitoring loop. It reads the lid sensor, classifies the lid state, applies display/keyboard/caffeinate effects, and persists recovery data so brightness can be restored after restarts or sleep transitions.
+This crate owns the monitoring loop. It reads the lid sensor, classifies the lid state, applies display/keyboard/cursor/caffeinate effects, and persists recovery data so brightness can be restored after restarts or sleep transitions.
 
 ## Example
 

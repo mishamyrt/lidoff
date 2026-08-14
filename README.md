@@ -14,7 +14,7 @@
     </a>
 </p>
 
-`lidoff` is a macOS daemon for Apple Silicon MacBooks. It watches the lid angle, turns off the built-in display and keyboard backlight when the lid is partially closed, disables external displays, and keeps the machine awake with `caffeinate`.
+`lidoff` is a macOS daemon for Apple Silicon MacBooks. It watches the lid angle, turns off the built-in display and keyboard backlight when the lid is partially closed, locks cursor movement, disables external displays, and keeps the machine awake with `caffeinate`.
 
 ## Why
 
@@ -32,6 +32,7 @@ https://github.com/user-attachments/assets/86740896-9a4b-4e2e-a616-a1353a61575c
 
 - Reads the MacBook lid angle instead of relying only on open/closed state.
 - Dims the built-in display and keyboard backlight to zero when the lid is partially closed.
+- Locks cursor movement from any mouse or trackpad while the displays are off.
 - Starts a `caffeinate` session while the partial-close state is active.
 - Restores saved brightness values when the lid opens or fully closes.
 - Disables and restores external displays when possible.
@@ -110,7 +111,7 @@ lidoff uninstall
 
 `lidoff` classifies lid angle into three states:
 
-- **Partially closed**: `5° <= angle < threshold`. Saves current brightness values, dims the built-in display and keyboard backlight to zero, disables external displays when possible, and starts `caffeinate`.
+- **Partially closed**: `5° <= angle < threshold`. Saves current brightness values, dims the built-in display and keyboard backlight to zero, locks cursor movement, disables external displays when possible, and starts `caffeinate`.
 - **Open**: `angle >= threshold`. Restores saved brightness values, restores external displays, and stops `caffeinate`.
 - **Fully closed**: `angle < 5°`. Restores saved brightness values, restores external displays, and stops `caffeinate`, allowing normal sleep behavior.
 

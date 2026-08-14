@@ -3,12 +3,14 @@ fn main() {
 
     let native_sources = [
         "src/shim/brightness.c",
+        "src/shim/cursor.c",
         "src/shim/displays.c",
         "src/shim/keyboard_backlight.c",
         "src/shim/skylight.c",
     ];
     let native_headers = [
         "src/shim/brightness.h",
+        "src/shim/cursor.h",
         "src/shim/displays.h",
         "src/shim/keyboard_backlight.h",
         "src/shim/skylight.h",

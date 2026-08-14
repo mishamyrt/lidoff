@@ -1,8 +1,10 @@
+mod cursor;
 mod display_external;
 mod display_internal;
 mod keyboard_backlight;
 mod shim;
 
+pub use cursor::{Cursor, CursorError};
 pub use display_external::{
     ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplayState, ExternalDisplays,
 };

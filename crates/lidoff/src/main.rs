@@ -13,7 +13,7 @@ use crate::lidoff::{CommandOutcome, Lidoff};
 #[command(
     name = "lidoff",
     version,
-    about = "MacBook lid angle display and keyboard brightness daemon",
+    about = "MacBook lid angle display, keyboard, and cursor daemon",
     long_about = None,
     after_help = behavior_help()
 )]
@@ -77,7 +77,7 @@ fn parse_interval(value: &str) -> Result<u64, String> {
 
 fn behavior_help() -> String {
     format!(
-        "Behavior:\n  angle < {MONITOR_FULL_CLOSE_ANGLE}: fully closed, restore brightness values and end caffeinate\n  angle < threshold: save brightness values, set them to 0, start caffeinate\n  angle >= threshold: restore saved brightness values, end caffeinate"
+        "Behavior:\n  angle < {MONITOR_FULL_CLOSE_ANGLE}: fully closed, restore brightness values, unlock cursor, end caffeinate\n  angle < threshold: save brightness values, set them to 0, lock cursor, start caffeinate\n  angle >= threshold: restore saved brightness values, unlock cursor, end caffeinate"
     )
 }
 

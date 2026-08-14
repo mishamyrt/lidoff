@@ -1,13 +1,14 @@
 # lidoff-display
 
-macOS display and keyboard-backlight control used by the daemon.
+macOS display, keyboard-backlight, and cursor control used by the daemon.
 
-This crate wraps the native C shims for internal display brightness, external display state, and keyboard backlight into small Rust controllers with serializable state snapshots.
+This crate wraps the native C shims for internal display brightness, external display state, keyboard backlight, and cursor locking into small Rust controllers.
 
 - Brightness values are normalized floats and restored through clamped `0.0..=1.0` values.
 - Controllers are marked non-thread-safe because the underlying macOS APIs and shim state are process-global.
 - External display disabling tracks only displays successfully captured by Skylight, so partial failures can be restored safely.
-- State types implement `Serialize`/`Deserialize` because `lidoff-daemon` persists them for recovery.
+- Display state types implement `Serialize`/`Deserialize` because `lidoff-daemon` persists them for recovery.
+- Cursor locking uses CoreGraphics mouse-cursor association, so it works with any pointing device.
 
 ## Example
 

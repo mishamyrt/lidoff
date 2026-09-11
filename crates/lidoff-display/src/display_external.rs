@@ -6,13 +6,10 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use thiserror::Error;
 
-use crate::{
-    DisplayController,
-    shim::{
-        capture_skylight_display, clear_skylight_backups, copy_skylight_state,
-        disable_skylight_display, finalize_skylight, is_builtin, online_displays,
-        prepare_skylight, restore_skylight_state,
-    },
+use crate::shim::{
+    capture_skylight_display, clear_skylight_backups, copy_skylight_state,
+    disable_skylight_display, finalize_skylight, is_builtin, online_displays,
+    prepare_skylight, restore_skylight_state,
 };
 
 static EXTERNAL_DISPLAYS_DISABLED: AtomicBool = AtomicBool::new(false);
@@ -58,15 +55,16 @@ pub enum ExternalDisplayError {
     RestoreFailed { restored: usize, failed: usize },
 }
 
-impl DisplayController for ExternalDisplays {
-    type State = ExternalDisplayState;
-    type Error = ExternalDisplayError;
+impl ExternalDisplays {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    fn is_disabled(&mut self) -> bool {
+    pub fn is_disabled(&mut self) -> bool {
         EXTERNAL_DISPLAYS_DISABLED.load(Ordering::Relaxed)
     }
 
-    fn disable(&mut self) -> Result<(), Self::Error> {
+    pub fn disable(&mut self) -> Result<(), ExternalDisplayError> {
         if self.is_disabled() {
             return Err(ExternalDisplayError::AlreadyDisabled);
         }
@@ -95,13 +93,16 @@ impl DisplayController for ExternalDisplays {
         }
     }
 
-    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
+    pub fn get_state(&mut self) -> Result<ExternalDisplayState, ExternalDisplayError> {
         let displays =
             online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
         copy_state_with_displays(&displays)
     }
 
-    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
+    pub fn restore_state(
+        &mut self,
+        state: &ExternalDisplayState,
+    ) -> Result<(), ExternalDisplayError> {
         if state.skylight_display_ids.is_empty() {
             EXTERNAL_DISPLAYS_DISABLED.store(false, Ordering::Relaxed);
             return Ok(());
@@ -119,12 +120,6 @@ impl DisplayController for ExternalDisplays {
         } else {
             Ok(())
         }
-    }
-}
-
-impl ExternalDisplays {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     pub fn capture_and_disable(

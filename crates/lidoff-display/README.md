@@ -13,10 +13,10 @@ This crate wraps the native C shims for internal display brightness, external di
 ## Example
 
 ```rust
-use lidoff_display::{DisplayController, InternalDisplay};
+use lidoff_display::InternalDisplay;
 
 let mut display = InternalDisplay::new();
 let state = display.get_state().expect("read brightness");
 display.disable().expect("disable display");
-display.restore_state(state).expect("restore display");
+display.restore_state(&state).expect("restore display");
 ```

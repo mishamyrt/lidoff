@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use lidoff_display::{
-    Cursor, CursorError, DisplayController, ExternalDisplayDisableResult,
-    ExternalDisplayError, ExternalDisplays, InternalDisplay, InternalDisplayError,
-    InternalDisplayState, KeyboardBacklight, KeyboardBacklightError, KeyboardBacklightState,
+    Cursor, CursorError, ExternalDisplayDisableResult, ExternalDisplayError, ExternalDisplays,
+    InternalDisplay, InternalDisplayError, InternalDisplayState, KeyboardBacklight,
+    KeyboardBacklightError, KeyboardBacklightState,
 };
 use lidoff_power::{Caffeinate, CaffeinateError};
 

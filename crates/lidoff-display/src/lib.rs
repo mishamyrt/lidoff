@@ -12,24 +12,3 @@ pub use display_internal::{InternalDisplay, InternalDisplayError, InternalDispla
 pub use keyboard_backlight::{
     KeyboardBacklight, KeyboardBacklightError, KeyboardBacklightState,
 };
-
-/// A trait for controlling the display.
-pub trait DisplayController {
-    /// The state of the display.
-    type State;
-
-    /// The error type of the display controller operations.
-    type Error;
-
-    /// Returns `true` if the display is currently disabled.
-    fn is_disabled(&mut self) -> bool;
-
-    /// Disables the display.
-    fn disable(&mut self) -> Result<(), Self::Error>;
-
-    /// Returns the current state of the display.
-    fn get_state(&mut self) -> Result<Self::State, Self::Error>;
-
-    /// Restores the display to the given state.
-    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error>;
-}

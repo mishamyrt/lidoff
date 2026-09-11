@@ -4,10 +4,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    DisplayController,
-    shim::{keyboard_backlight_get, keyboard_backlight_set},
-};
+use crate::shim::{keyboard_backlight_get, keyboard_backlight_set};
 
 #[derive(Debug, Default)]
 pub struct KeyboardBacklight {
@@ -31,15 +28,16 @@ pub enum KeyboardBacklightError {
     GetBrightnessFailed,
 }
 
-impl DisplayController for KeyboardBacklight {
-    type State = KeyboardBacklightState;
-    type Error = KeyboardBacklightError;
+impl KeyboardBacklight {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    fn is_disabled(&mut self) -> bool {
+    pub fn is_disabled(&mut self) -> bool {
         keyboard_backlight_get() == 0.0
     }
 
-    fn disable(&mut self) -> Result<(), Self::Error> {
+    pub fn disable(&mut self) -> Result<(), KeyboardBacklightError> {
         if self.is_disabled() {
             return Err(KeyboardBacklightError::AlreadyDisabled);
         }
@@ -50,7 +48,7 @@ impl DisplayController for KeyboardBacklight {
         Ok(())
     }
 
-    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
+    pub fn get_state(&mut self) -> Result<KeyboardBacklightState, KeyboardBacklightError> {
         let brightness = keyboard_backlight_get();
         if brightness < 0.0 {
             return Err(KeyboardBacklightError::GetBrightnessFailed);
@@ -59,18 +57,15 @@ impl DisplayController for KeyboardBacklight {
         Ok(KeyboardBacklightState { brightness })
     }
 
-    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
+    pub fn restore_state(
+        &mut self,
+        state: &KeyboardBacklightState,
+    ) -> Result<(), KeyboardBacklightError> {
         if !keyboard_backlight_set(state.brightness.clamp(0.0, 1.0)) {
             return Err(KeyboardBacklightError::BrightnessFailed);
         }
 
         Ok(())
-    }
-}
-
-impl KeyboardBacklight {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     pub fn disable_from_state(

@@ -4,10 +4,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    DisplayController,
-    shim::{brightness_get, brightness_set},
-};
+use crate::shim::{brightness_get, brightness_set};
 
 #[derive(Debug, Default)]
 pub struct InternalDisplay {
@@ -31,15 +28,16 @@ pub enum InternalDisplayError {
     GetBrightnessFailed,
 }
 
-impl DisplayController for InternalDisplay {
-    type State = InternalDisplayState;
-    type Error = InternalDisplayError;
+impl InternalDisplay {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    fn is_disabled(&mut self) -> bool {
+    pub fn is_disabled(&mut self) -> bool {
         brightness_get() == 0.0
     }
 
-    fn disable(&mut self) -> Result<(), Self::Error> {
+    pub fn disable(&mut self) -> Result<(), InternalDisplayError> {
         if self.is_disabled() {
             return Err(InternalDisplayError::AlreadyDisabled);
         }
@@ -50,7 +48,7 @@ impl DisplayController for InternalDisplay {
         Ok(())
     }
 
-    fn get_state(&mut self) -> Result<Self::State, Self::Error> {
+    pub fn get_state(&mut self) -> Result<InternalDisplayState, InternalDisplayError> {
         let brightness = brightness_get();
         if brightness < 0.0 {
             return Err(InternalDisplayError::GetBrightnessFailed);
@@ -59,7 +57,10 @@ impl DisplayController for InternalDisplay {
         Ok(InternalDisplayState { brightness })
     }
 
-    fn restore_state(&mut self, state: &Self::State) -> Result<(), Self::Error> {
+    pub fn restore_state(
+        &mut self,
+        state: &InternalDisplayState,
+    ) -> Result<(), InternalDisplayError> {
         let brightness = state.brightness.clamp(0.0, 1.0);
 
         if !brightness_set(brightness) {
@@ -67,12 +68,6 @@ impl DisplayController for InternalDisplay {
         }
 
         Ok(())
-    }
-}
-
-impl InternalDisplay {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     pub fn disable_from_state(

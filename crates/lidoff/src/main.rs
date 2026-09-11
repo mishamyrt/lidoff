@@ -22,7 +22,7 @@ struct Cli {
         short = 't',
         long = "threshold",
         default_value_t = MONITOR_DEFAULT_THRESHOLD,
-        value_parser = parse_threshold,
+        value_parser = clap::value_parser!(u32).range(10..=60),
         value_name = "degrees",
         help = "Lid angle threshold in range 10-60 degrees"
     )]
@@ -32,7 +32,7 @@ struct Cli {
         short = 'i',
         long = "interval",
         default_value_t = MONITOR_DEFAULT_INTERVAL_MS,
-        value_parser = parse_interval,
+        value_parser = clap::value_parser!(u64).range(50..=5_000),
         value_name = "ms",
         help = "Polling interval in ms in range 50-5000 ms"
     )]
@@ -55,24 +55,6 @@ enum Command {
     Status,
     /// Start the monitor in the foreground
     Run,
-}
-
-fn parse_threshold(value: &str) -> Result<u32, String> {
-    let threshold =
-        value.parse::<u32>().map_err(|_| format!("invalid threshold: {value} (10-60)"))?;
-    if !(10..=60).contains(&threshold) {
-        return Err(format!("invalid threshold: {threshold} (10-60)"));
-    }
-    Ok(threshold)
-}
-
-fn parse_interval(value: &str) -> Result<u64, String> {
-    let interval_ms =
-        value.parse::<u64>().map_err(|_| format!("invalid interval: {value} (50-5000)"))?;
-    if !(50..=5_000).contains(&interval_ms) {
-        return Err(format!("invalid interval: {interval_ms} (50-5000)"));
-    }
-    Ok(interval_ms)
 }
 
 fn behavior_help() -> String {
@@ -106,6 +88,27 @@ fn main() -> std::process::ExitCode {
                 eprintln!("{source_err}");
             }
             std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn cli_validates_option_ranges() {
+        for (flag, valid, invalid) in [
+            ("--threshold", ["10", "30", "60"], ["9", "61", "-1", "text"]),
+            ("--interval", ["50", "300", "5000"], ["49", "5001", "-1", "text"]),
+        ] {
+            for value in valid {
+                assert!(Cli::try_parse_from(["lidoff", flag, value, "run"]).is_ok());
+            }
+            for value in invalid {
+                assert!(Cli::try_parse_from(["lidoff", flag, value, "run"]).is_err());
+            }
         }
     }
 }

@@ -7,9 +7,8 @@ use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::shim::{
-    capture_skylight_display, clear_skylight_backups, copy_skylight_state,
     disable_skylight_display, finalize_skylight, is_builtin, online_displays,
-    prepare_skylight, restore_skylight_state,
+    restore_skylight_state,
 };
 
 static EXTERNAL_DISPLAYS_DISABLED: AtomicBool = AtomicBool::new(false);
@@ -39,15 +38,6 @@ pub enum ExternalDisplayError {
     #[error("failed to get online displays")]
     GetOnlineDisplaysFailed,
 
-    #[error("failed to prepare Skylight backend")]
-    SkylightPrepareFailed,
-
-    #[error("failed to capture Skylight state")]
-    SkylightCaptureFailed,
-
-    #[error("failed to copy Skylight state")]
-    SkylightCopyStateFailed,
-
     #[error("failed to disable {failed} external display(s), disabled {disabled}")]
     DisableFailed { disabled: usize, failed: usize },
 
@@ -72,11 +62,6 @@ impl ExternalDisplays {
         let displays =
             online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
 
-        if !prepare_skylight(displays.len()) {
-            clear_skylight_backups();
-            return Err(ExternalDisplayError::SkylightPrepareFailed);
-        }
-
         let (mut disabled, mut failed) = disable_external_displays(&displays);
 
         let committed = finalize_skylight();
@@ -91,12 +76,6 @@ impl ExternalDisplays {
         } else {
             Ok(())
         }
-    }
-
-    pub fn get_state(&mut self) -> Result<ExternalDisplayState, ExternalDisplayError> {
-        let displays =
-            online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
-        copy_state_with_displays(&displays)
     }
 
     pub fn restore_state(
@@ -132,15 +111,9 @@ impl ExternalDisplays {
         let displays =
             online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
 
-        if !prepare_skylight(displays.len()) {
-            clear_skylight_backups();
-            return Err(ExternalDisplayError::SkylightPrepareFailed);
-        }
-
         let (mut state, mut failed) = capture_disabled_external_displays(&displays);
         let mut disabled = state.skylight_display_ids.len();
 
-        clear_skylight_backups();
         let committed = finalize_skylight();
         if !committed {
             failed += disabled;
@@ -151,31 +124,6 @@ impl ExternalDisplays {
 
         Ok(ExternalDisplayDisableResult { state, disabled, failed })
     }
-}
-
-fn copy_state_with_displays(
-    displays: &[u32],
-) -> Result<ExternalDisplayState, ExternalDisplayError> {
-    if !prepare_skylight(displays.len()) {
-        clear_skylight_backups();
-        return Err(ExternalDisplayError::SkylightPrepareFailed);
-    }
-
-    for display_id in external_display_ids(displays) {
-        if !capture_skylight_display(display_id) {
-            clear_skylight_backups();
-            finalize_skylight();
-            return Err(ExternalDisplayError::SkylightCaptureFailed);
-        }
-    }
-
-    let state = copy_skylight_state()
-        .map(|skylight_display_ids| ExternalDisplayState { skylight_display_ids })
-        .ok_or(ExternalDisplayError::SkylightCopyStateFailed);
-
-    clear_skylight_backups();
-    finalize_skylight();
-    state
 }
 
 fn disable_external_displays(displays: &[u32]) -> (usize, usize) {

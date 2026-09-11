@@ -57,7 +57,6 @@ unsafe extern "C" {
 
 const MAX_DISPLAY_COUNT: usize = 32;
 type DisplayIds = SmallVec<[u32; MAX_DISPLAY_COUNT]>;
-type SkylightDisplayIds = SmallVec<[u32; 4]>;
 
 /// Returns a list of online display IDs.
 pub(crate) fn online_displays() -> Option<DisplayIds> {
@@ -81,19 +80,9 @@ pub(crate) fn is_builtin(display_id: u32) -> bool {
 /* Skylight */
 
 unsafe extern "C" {
-    fn SkylightPrepare(display_count: usize) -> u8;
     fn SkylightFinalize() -> u8;
-    fn SkylightClearBackups();
-    fn SkylightCaptureDisplay(display_id: u32) -> u8;
     fn SkylightDisableDisplay(display_id: u32) -> u8;
-    fn SkylightBackupCount() -> usize;
-    fn SkylightCopyState(display_ids: *mut u32, capacity: usize) -> usize;
     fn SkylightRestoreFromState(display_ids: *const u32, count: usize) -> usize;
-}
-
-/// Prepares the Skylight session with the given display count.
-pub(crate) fn prepare_skylight(display_count: usize) -> bool {
-    unsafe { c_bool(SkylightPrepare(display_count)) }
 }
 
 /// Finalizes the Skylight session.
@@ -101,34 +90,10 @@ pub(crate) fn finalize_skylight() -> bool {
     unsafe { c_bool(SkylightFinalize()) }
 }
 
-/// Clears the Skylight backups.
-pub(crate) fn clear_skylight_backups() {
-    unsafe { SkylightClearBackups() }
-}
-
-/// Captures the Skylight display with the given ID.
-/// Returns `true` if the display was captured successfully.
-pub(crate) fn capture_skylight_display(display_id: u32) -> bool {
-    unsafe { c_bool(SkylightCaptureDisplay(display_id)) }
-}
-
 /// Disables the Skylight display with the given ID.
 /// Returns `true` if the display was disabled successfully.
 pub(crate) fn disable_skylight_display(display_id: u32) -> bool {
     unsafe { c_bool(SkylightDisableDisplay(display_id)) }
-}
-
-/// Copies the Skylight state into a buffer.
-/// Returns the number of display IDs copied.
-pub(crate) fn copy_skylight_state() -> Option<SkylightDisplayIds> {
-    let count = unsafe { SkylightBackupCount() };
-    if count == 0 {
-        return Some(SmallVec::new());
-    }
-
-    let mut display_ids = SmallVec::from_elem(0_u32, count);
-    let copied = unsafe { SkylightCopyState(display_ids.as_mut_ptr(), count) };
-    (copied == count).then_some(display_ids)
 }
 
 /// Restores the Skylight state from the given display IDs.

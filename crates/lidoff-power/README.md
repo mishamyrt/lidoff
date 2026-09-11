@@ -7,8 +7,8 @@ This crate wraps the native caffeinate and sleep/wake observer shims. It is resp
 ## Details
 
 - `Caffeinate` is non-thread-safe because the native assertion is process-global.
-- `PowerObserver::start` waits for native observer registration before returning.
-- The observer owns a background run loop thread; callbacks must be `extern "C" fn(*mut c_void)`.
+- `start_power_observer` waits for native observer registration before returning.
+- The observer runs on a detached background thread; callbacks must be `extern "C" fn(*mut c_void)`.
 
 ## Example
 

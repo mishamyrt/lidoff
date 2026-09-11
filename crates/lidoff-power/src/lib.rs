@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     rc::Rc,
     sync::mpsc::{self, SyncSender},
-    thread::{self, JoinHandle},
+    thread,
 };
 use thiserror::Error;
 
@@ -69,56 +69,30 @@ impl Caffeinate {
     }
 }
 
-pub struct PowerObserver {
-    context: *mut c_void,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl Default for PowerObserver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PowerObserver {
-    pub fn new() -> Self {
-        Self { context: std::ptr::null_mut(), thread: None }
-    }
-
-    pub fn start(
-        &mut self,
-        will_sleep: extern "C" fn(*mut c_void),
-        did_wake: extern "C" fn(*mut c_void),
-    ) -> Result<(), PowerNotifierError> {
-        let context = self.context as usize;
-        let (startup_tx, startup_rx) = mpsc::sync_channel::<u8>(1);
-        let thread =
-            thread::Builder::new().name("lidoff.power".to_owned()).spawn(move || {
-                let startup_context = (&raw const startup_tx).cast_mut().cast::<c_void>();
-                unsafe {
-                    PowerObserverRunLoop(
-                        will_sleep,
-                        did_wake,
-                        context as *mut c_void,
-                        handle_power_observer_startup,
-                        startup_context,
-                    );
-                }
-            })?;
-
-        if startup_rx.recv().map_err(|_| PowerNotifierError::StartupStatusFailed)? != 0 {
-            return Err(PowerNotifierError::RegisterFailed);
+/// Starts a detached power observer thread and waits for native registration.
+pub fn start_power_observer(
+    will_sleep: extern "C" fn(*mut c_void),
+    did_wake: extern "C" fn(*mut c_void),
+) -> Result<(), PowerNotifierError> {
+    let (startup_tx, startup_rx) = mpsc::sync_channel::<u8>(1);
+    thread::Builder::new().name("lidoff.power".to_owned()).spawn(move || {
+        let startup_context = (&raw const startup_tx).cast_mut().cast::<c_void>();
+        unsafe {
+            PowerObserverRunLoop(
+                will_sleep,
+                did_wake,
+                std::ptr::null_mut(),
+                handle_power_observer_startup,
+                startup_context,
+            );
         }
+    })?;
 
-        self.thread = Some(thread);
-        Ok(())
+    if startup_rx.recv().map_err(|_| PowerNotifierError::StartupStatusFailed)? != 0 {
+        return Err(PowerNotifierError::RegisterFailed);
     }
-}
 
-impl Drop for PowerObserver {
-    fn drop(&mut self) {
-        drop(self.thread.take());
-    }
+    Ok(())
 }
 
 extern "C" fn handle_power_observer_startup(status: u8, context: *mut c_void) {

@@ -122,17 +122,7 @@ fn executable_path() -> io::Result<PathBuf> {
 }
 
 fn resolve_executable_path(exec_path: &Path) -> io::Result<PathBuf> {
-    let real_path = match fs::read_link(exec_path) {
-        Ok(path) if path.is_absolute() => path,
-        Ok(path) => exec_path.parent().unwrap_or(Path::new("")).join(path),
-        Err(_) => exec_path.to_path_buf(),
-    };
-
-    if real_path.is_absolute() {
-        fs::canonicalize(real_path)
-    } else {
-        fs::canonicalize(std::env::current_dir()?.join(real_path))
-    }
+    fs::canonicalize(exec_path)
 }
 
 fn build_agent(threshold: u32, interval: u64, bin_path: &Path) -> Result<LaunchAgent> {

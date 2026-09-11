@@ -42,7 +42,7 @@ pub(super) fn handle_partially_closed_locked(
     angle: u32,
     now: Instant,
 ) -> MonitorAction {
-    if partial_dimming_suppression_reason(state, now).is_some() {
+    if partial_dimming_suppressed(state, now) {
         state.below_threshold_streak = 0;
         return MonitorAction::None;
     }
@@ -67,39 +67,14 @@ pub(super) fn handle_partially_closed_locked(
     MonitorAction::None
 }
 
-#[cfg(test)]
-fn partial_grace_active(state: &MonitorState, now: Instant) -> bool {
-    partial_dimming_suppression_reason(state, now).is_some()
-}
-
-#[cfg(test)]
 fn partial_dimming_suppressed(state: &MonitorState, now: Instant) -> bool {
-    partial_dimming_suppression_reason(state, now).is_some()
-}
-
-fn partial_dimming_suppression_reason(
-    state: &MonitorState,
-    now: Instant,
-) -> Option<&'static str> {
-    if state.awaiting_open_after_full_close {
-        return Some("awaiting open after full close");
-    }
-    if since(state.last_full_close_at, now)
-        < Duration::from_secs_f64(MONITOR_POST_CLOSE_GRACE_SECONDS)
-    {
-        return Some("post full-close grace");
-    }
-    if since(state.last_open_at, now)
-        < Duration::from_secs_f64(MONITOR_POST_OPEN_GRACE_SECONDS)
-    {
-        return Some("post open grace");
-    }
-    if since(state.last_wake_at, now)
-        < Duration::from_secs_f64(MONITOR_POST_WAKE_GRACE_SECONDS)
-    {
-        return Some("post wake grace");
-    }
-    None
+    state.awaiting_open_after_full_close
+        || since(state.last_full_close_at, now)
+            < Duration::from_secs_f64(MONITOR_POST_CLOSE_GRACE_SECONDS)
+        || since(state.last_open_at, now)
+            < Duration::from_secs_f64(MONITOR_POST_OPEN_GRACE_SECONDS)
+        || since(state.last_wake_at, now)
+            < Duration::from_secs_f64(MONITOR_POST_WAKE_GRACE_SECONDS)
 }
 
 fn since(timestamp: Option<Instant>, now: Instant) -> Duration {
@@ -157,9 +132,8 @@ fn should_restore_on_open(state: &MonitorState) -> bool {
 mod tests {
     use super::{
         handle_open_locked, lid_state_for_angle, maybe_start_open_restore_hold,
-        partial_dimming_suppressed, partial_grace_active,
-        should_clear_internal_restore_on_open, should_prepare_fully_closed,
-        should_restore_on_open,
+        partial_dimming_suppressed, should_clear_internal_restore_on_open,
+        should_prepare_fully_closed, should_restore_on_open,
     };
     use crate::monitor::{MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE};
     use lidoff_display::{InternalDisplayState, KeyboardBacklightState};
@@ -229,8 +203,8 @@ mod tests {
 
         handle_open_locked(&mut state, now, true);
 
-        assert!(partial_grace_active(&state, now + Duration::from_millis(500)));
-        assert!(!partial_grace_active(&state, now + Duration::from_secs(1)));
+        assert!(partial_dimming_suppressed(&state, now + Duration::from_millis(500)));
+        assert!(!partial_dimming_suppressed(&state, now + Duration::from_secs(1)));
     }
 
     #[test]
@@ -241,7 +215,7 @@ mod tests {
 
         handle_open_locked(&mut state, now, false);
 
-        assert!(!partial_grace_active(&state, now));
+        assert!(!partial_dimming_suppressed(&state, now));
     }
 
     #[test]

@@ -45,12 +45,7 @@ pub fn run(config: &DaemonConfig) -> bool {
     };
     logging::info!("lid sensor initialized");
 
-    let monitor_config = monitor::MonitorConfig {
-        threshold: config.threshold,
-        interval_ms: config.interval_ms,
-        recovery_cache_dir: config.recovery_cache_dir.clone(),
-    };
-    monitor::run(&monitor_config, &SHOULD_RUN, &mut lid_sensor).is_ok()
+    monitor::run(config, &SHOULD_RUN, &mut lid_sensor).is_ok()
 }
 
 fn install_signal_handlers() {

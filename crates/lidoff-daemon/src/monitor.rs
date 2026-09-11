@@ -4,7 +4,6 @@ mod power_events;
 mod state;
 mod transitions;
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -21,7 +20,7 @@ use self::transitions::{
     handle_fully_closed_locked, handle_open_locked, handle_partially_closed_locked,
     lid_state_for_angle,
 };
-use crate::logging;
+use crate::{DaemonConfig, logging};
 
 pub const MONITOR_DEFAULT_INTERVAL_MS: u64 = 300;
 pub const MONITOR_DEFAULT_THRESHOLD: u32 = 30;
@@ -33,15 +32,8 @@ const MONITOR_POST_OPEN_GRACE_SECONDS: f64 = 1.0;
 const MONITOR_POST_OPEN_RESTORE_SECONDS: f64 = 2.0;
 const MONITOR_POST_WAKE_GRACE_SECONDS: f64 = 1.0;
 
-#[derive(Clone, Debug)]
-pub(crate) struct MonitorConfig {
-    pub threshold: u32,
-    pub interval_ms: u64,
-    pub recovery_cache_dir: PathBuf,
-}
-
 pub(crate) fn run(
-    config: &MonitorConfig,
+    config: &DaemonConfig,
     should_run: &AtomicBool,
     lid_sensor: &mut LidSensor,
 ) -> Result<(), PowerNotifierError> {

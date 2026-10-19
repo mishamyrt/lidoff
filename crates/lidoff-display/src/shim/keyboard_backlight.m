@@ -76,47 +76,50 @@ static bool copyFirstKeyboardId(id client, unsigned long long *keyboard_id) {
 }
 
 float KeyboardBacklightGet(void) {
-    id client = newKeyboardBrightnessClient();
-    if (client == nil) {
-        return -1.0f;
-    }
-
-    unsigned long long keyboard_id = 1;
-    if (!copyFirstKeyboardId(client, &keyboard_id)) {
-        releaseObject(client);
-        return -1.0f;
-    }
-
-    SEL brightness_selector = sel_registerName("brightnessForKeyboard:");
-    if (!class_getInstanceMethod(object_getClass(client), brightness_selector)) {
-        releaseObject(client);
-        return -1.0f;
-    }
-
-    BOOL was_suspended = false;
-    SEL is_dimmed_selector = sel_registerName("isBacklightDimmedOnKeyboard:");
-    SEL suspend_selector = sel_registerName("suspendIdleDimming:forKeyboard:");
-    if (class_getInstanceMethod(object_getClass(client), is_dimmed_selector) &&
-        class_getInstanceMethod(object_getClass(client), suspend_selector)) {
-        BOOL is_dimmed = ((BOOL (*)(id, SEL, unsigned long long))objc_msgSend)(
-            client, is_dimmed_selector, keyboard_id);
-        if (is_dimmed) {
-            ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
-                client, suspend_selector, (BOOL)1, keyboard_id);
-            was_suspended = true;
+    // Rust callers do not provide a Cocoa autorelease pool.
+    @autoreleasepool {
+        id client = newKeyboardBrightnessClient();
+        if (client == nil) {
+            return -1.0f;
         }
+
+        unsigned long long keyboard_id = 1;
+        if (!copyFirstKeyboardId(client, &keyboard_id)) {
+            releaseObject(client);
+            return -1.0f;
+        }
+
+        SEL brightness_selector = sel_registerName("brightnessForKeyboard:");
+        if (!class_getInstanceMethod(object_getClass(client), brightness_selector)) {
+            releaseObject(client);
+            return -1.0f;
+        }
+
+        BOOL was_suspended = false;
+        SEL is_dimmed_selector = sel_registerName("isBacklightDimmedOnKeyboard:");
+        SEL suspend_selector = sel_registerName("suspendIdleDimming:forKeyboard:");
+        if (class_getInstanceMethod(object_getClass(client), is_dimmed_selector) &&
+            class_getInstanceMethod(object_getClass(client), suspend_selector)) {
+            BOOL is_dimmed = ((BOOL (*)(id, SEL, unsigned long long))objc_msgSend)(
+                client, is_dimmed_selector, keyboard_id);
+            if (is_dimmed) {
+                ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
+                    client, suspend_selector, (BOOL)1, keyboard_id);
+                was_suspended = true;
+            }
+        }
+
+        float brightness = ((float (*)(id, SEL, unsigned long long))objc_msgSend)(
+            client, brightness_selector, keyboard_id);
+
+        if (was_suspended) {
+            ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
+                client, suspend_selector, (BOOL)0, keyboard_id);
+        }
+
+        releaseObject(client);
+        return brightness;
     }
-
-    float brightness = ((float (*)(id, SEL, unsigned long long))objc_msgSend)(
-        client, brightness_selector, keyboard_id);
-
-    if (was_suspended) {
-        ((void (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(
-            client, suspend_selector, (BOOL)0, keyboard_id);
-    }
-
-    releaseObject(client);
-    return brightness;
 }
 
 static bool setKeyboardBrightness(id client,
@@ -146,47 +149,49 @@ static bool setKeyboardBrightness(id client,
 }
 
 uint8_t KeyboardBacklightSet(float brightness) {
-    if (brightness < 0.0f) {
-        brightness = 0.0f;
-    }
-    if (brightness > 1.0f) {
-        brightness = 1.0f;
-    }
-
-    id client = newKeyboardBrightnessClient();
-    if (client == nil) {
-        return 0;
-    }
-
-    bool any_ok = false;
-    SEL ids_selector = sel_registerName("copyKeyboardBacklightIDs");
-    if (class_getInstanceMethod(object_getClass(client), ids_selector)) {
-        id ids = ((id (*)(id, SEL))objc_msgSend)(client, ids_selector);
-
-        if (ids != nil) {
-            NSUInteger count =
-                ((NSUInteger (*)(id, SEL))objc_msgSend)(ids, sel_registerName("count"));
-
-            for (NSUInteger i = 0; i < count; i++) {
-                id number = ((id (*)(id, SEL, NSUInteger))objc_msgSend)(
-                    ids, sel_registerName("objectAtIndex:"), i);
-                unsigned long long keyboard_id =
-                    ((unsigned long long (*)(id, SEL))objc_msgSend)(
-                        number, sel_registerName("unsignedLongLongValue"));
-
-                if (setKeyboardBrightness(client, keyboard_id, brightness)) {
-                    any_ok = true;
-                }
-            }
-
-            releaseObject(ids);
+    @autoreleasepool {
+        if (brightness < 0.0f) {
+            brightness = 0.0f;
         }
-    }
+        if (brightness > 1.0f) {
+            brightness = 1.0f;
+        }
 
-    if (!any_ok) {
-        any_ok = setKeyboardBrightness(client, 1, brightness);
-    }
+        id client = newKeyboardBrightnessClient();
+        if (client == nil) {
+            return 0;
+        }
 
-    releaseObject(client);
-    return any_ok ? 1 : 0;
+        bool any_ok = false;
+        SEL ids_selector = sel_registerName("copyKeyboardBacklightIDs");
+        if (class_getInstanceMethod(object_getClass(client), ids_selector)) {
+            id ids = ((id (*)(id, SEL))objc_msgSend)(client, ids_selector);
+
+            if (ids != nil) {
+                NSUInteger count =
+                    ((NSUInteger (*)(id, SEL))objc_msgSend)(ids, sel_registerName("count"));
+
+                for (NSUInteger i = 0; i < count; i++) {
+                    id number = ((id (*)(id, SEL, NSUInteger))objc_msgSend)(
+                        ids, sel_registerName("objectAtIndex:"), i);
+                    unsigned long long keyboard_id =
+                        ((unsigned long long (*)(id, SEL))objc_msgSend)(
+                            number, sel_registerName("unsignedLongLongValue"));
+
+                    if (setKeyboardBrightness(client, keyboard_id, brightness)) {
+                        any_ok = true;
+                    }
+                }
+
+                releaseObject(ids);
+            }
+        }
+
+        if (!any_ok) {
+            any_ok = setKeyboardBrightness(client, 1, brightness);
+        }
+
+        releaseObject(client);
+        return any_ok ? 1 : 0;
+    }
 }

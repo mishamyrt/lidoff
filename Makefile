@@ -17,7 +17,7 @@ fmt:
 	@cargo fmt --all
 	@find \
 		crates/ \
-		-iname '*.h' -o -iname '*.c' \
+		-iname '*.h' -o -iname '*.c' -o -iname '*.m' \
 		| xargs clang-format -i
 
 test:

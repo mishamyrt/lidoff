@@ -5,7 +5,7 @@ fn main() {
         "src/shim/brightness.c",
         "src/shim/cursor.c",
         "src/shim/displays.c",
-        "src/shim/keyboard_backlight.c",
+        "src/shim/keyboard_backlight.m",
         "src/shim/skylight.c",
     ];
     let native_headers = [

@@ -31,6 +31,11 @@ pub(super) fn execute_monitor_action(
     }
 
     let _effects = lock_effects();
+    if matches!(action, MonitorAction::StartPartialDim | MonitorAction::ResumePartialDim)
+        && lock_state(shared_state).system_sleeping
+    {
+        return;
+    }
     execute_monitor_action_locked(shared_state, action, recovery_cache_dir);
 }
 
@@ -471,8 +476,41 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
     use super::super::state::MonitorState;
-    use super::brightness_snapshot_for_dim;
+    use super::{MonitorAction, brightness_snapshot_for_dim, execute_monitor_action};
+
+    static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[unsafe(export_name = "BrightnessGet")]
+    extern "C" fn brightness_get() -> f32 {
+        BRIGHTNESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        -1.0
+    }
+
+    #[unsafe(export_name = "BrightnessSet")]
+    extern "C" fn brightness_set(_brightness: f32) -> u8 {
+        BRIGHTNESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        0
+    }
+
+    #[test]
+    fn queued_dimming_does_not_run_while_sleeping() {
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        shared_state.lock().unwrap().system_sleeping = true;
+        let cache_dir =
+            std::env::temp_dir().join(format!("lidoff-sleep-test-{}", std::process::id()));
+
+        for action in [MonitorAction::StartPartialDim, MonitorAction::ResumePartialDim] {
+            execute_monitor_action(&shared_state, action, &cache_dir);
+        }
+
+        assert_eq!(BRIGHTNESS_CALLS.load(Ordering::Relaxed), 0);
+        assert!(!shared_state.lock().unwrap().caffeinate_active);
+        assert!(!cache_dir.exists());
+    }
 
     #[test]
     #[allow(clippy::float_cmp)]

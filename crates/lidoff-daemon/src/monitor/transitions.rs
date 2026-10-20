@@ -34,7 +34,7 @@ pub(super) fn handle_fully_closed_locked(
 }
 
 fn should_prepare_fully_closed(state: &MonitorState, state_changed: bool) -> bool {
-    state_changed || state.caffeinate_active
+    state_changed || state.caffeinate_active || state.external_display_state.is_some()
 }
 
 pub(super) fn handle_partially_closed_locked(

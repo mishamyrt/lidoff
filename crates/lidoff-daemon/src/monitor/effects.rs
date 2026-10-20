@@ -101,6 +101,7 @@ fn prepare_display_state_for_sleep_locked(
     log_restore: bool,
 ) {
     unlock_cursor();
+    restore_external_display_state(shared_state);
     restore_keyboard_backlight_state(shared_state, log_restore, false);
     apply_internal_display_state(
         shared_state,
@@ -476,13 +477,15 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
     use super::{MonitorAction, brightness_snapshot_for_dim, execute_monitor_action};
 
     static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static EXTERNAL_RESTORE_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static FAIL_EXTERNAL_RESTORE: AtomicBool = AtomicBool::new(true);
 
     #[unsafe(export_name = "BrightnessGet")]
     extern "C" fn brightness_get() -> f32 {
@@ -494,6 +497,74 @@ mod tests {
     extern "C" fn brightness_set(_brightness: f32) -> u8 {
         BRIGHTNESS_CALLS.fetch_add(1, Ordering::Relaxed);
         0
+    }
+
+    #[unsafe(export_name = "CursorIsLocked")]
+    extern "C" fn cursor_is_locked() -> u8 {
+        0
+    }
+
+    #[unsafe(export_name = "CursorLock")]
+    extern "C" fn cursor_lock() -> u8 {
+        1
+    }
+
+    #[unsafe(export_name = "CursorUnlock")]
+    extern "C" fn cursor_unlock() -> u8 {
+        1
+    }
+
+    #[unsafe(export_name = "SkylightFinalize")]
+    extern "C" fn skylight_finalize() -> u8 {
+        1
+    }
+
+    #[unsafe(export_name = "SkylightDisableDisplay")]
+    extern "C" fn skylight_disable_display(_display_id: u32) -> u8 {
+        1
+    }
+
+    #[unsafe(export_name = "SkylightRestoreFromState")]
+    extern "C" fn skylight_restore_from_state(
+        _display_ids: *const u32,
+        count: usize,
+    ) -> usize {
+        EXTERNAL_RESTORE_CALLS.fetch_add(1, Ordering::Relaxed);
+        if FAIL_EXTERNAL_RESTORE.load(Ordering::Relaxed) { count - 1 } else { count }
+    }
+
+    #[test]
+    fn fully_closed_restores_external_displays_and_retries_failures() {
+        use super::super::transitions::handle_fully_closed_locked;
+        use lidoff_display::ExternalDisplayState;
+
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        let saved_state = ExternalDisplayState { skylight_display_ids: vec![2, 3].into() };
+        shared_state.lock().unwrap().external_display_state = Some(saved_state.clone());
+        let cache_dir = std::env::temp_dir()
+            .join(format!("lidoff-external-sleep-test-{}", std::process::id()));
+
+        execute_monitor_action(
+            &shared_state,
+            MonitorAction::PrepareDisplayStateForSleep { log_restore: false },
+            &cache_dir,
+        );
+        assert_eq!(EXTERNAL_RESTORE_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(shared_state.lock().unwrap().external_display_state, Some(saved_state));
+
+        FAIL_EXTERNAL_RESTORE.store(false, Ordering::Relaxed);
+        let action = handle_fully_closed_locked(
+            &mut shared_state.lock().unwrap(),
+            std::time::Instant::now(),
+            false,
+        );
+        assert!(matches!(action, MonitorAction::PrepareDisplayStateForSleep { .. }));
+        execute_monitor_action(&shared_state, action, &cache_dir);
+
+        assert_eq!(EXTERNAL_RESTORE_CALLS.load(Ordering::Relaxed), 2);
+        assert!(shared_state.lock().unwrap().external_display_state.is_none());
+        assert!(!cache_dir.join("state.bin").exists());
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
     #[test]

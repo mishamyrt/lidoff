@@ -122,7 +122,16 @@ fn executable_path() -> io::Result<PathBuf> {
 }
 
 fn resolve_executable_path(exec_path: &Path) -> io::Result<PathBuf> {
-    fs::canonicalize(exec_path)
+    let resolved = fs::canonicalize(exec_path)?;
+    if let Some(prefix) = resolved.ancestors().nth(5) {
+        let opt_path = prefix.join("opt/lidoff/bin/lidoff");
+        if resolved.starts_with(prefix.join("Cellar/lidoff"))
+            && fs::canonicalize(&opt_path).is_ok_and(|path| path == resolved)
+        {
+            return Ok(opt_path);
+        }
+    }
+    Ok(resolved)
 }
 
 fn build_agent(threshold: u32, interval: u64, bin_path: &Path) -> Result<LaunchAgent> {
@@ -152,7 +161,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::resolve_executable_path;
+    use super::{build_agent, resolve_executable_path};
 
     struct TestDir {
         path: PathBuf,
@@ -198,5 +207,44 @@ mod tests {
         let resolved = resolve_executable_path(&symlink_path).unwrap();
 
         assert_eq!(resolved, fs::canonicalize(&executable).unwrap());
+    }
+
+    #[test]
+    fn homebrew_launch_agent_path_survives_upgrade() {
+        let temp = TestDir::new();
+        let homebrew = temp.path().join("Homebrew");
+        let old_version = homebrew.join("Cellar/lidoff/0.4.0");
+        let new_version = homebrew.join("Cellar/lidoff/0.5.0");
+        let opt_path = homebrew.join("opt/lidoff");
+
+        for version in [&old_version, &new_version] {
+            fs::create_dir_all(version.join("bin")).unwrap();
+            fs::write(version.join("bin/lidoff"), version.to_string_lossy().as_bytes())
+                .unwrap();
+        }
+        fs::create_dir_all(homebrew.join("bin")).unwrap();
+        fs::create_dir_all(homebrew.join("opt")).unwrap();
+        symlink("../Cellar/lidoff/0.4.0", &opt_path).unwrap();
+        let bin_path = homebrew.join("bin/lidoff");
+        symlink("../Cellar/lidoff/0.4.0/bin/lidoff", &bin_path).unwrap();
+
+        let resolved = resolve_executable_path(&bin_path).unwrap();
+        let expected = fs::canonicalize(&homebrew).unwrap().join("opt/lidoff/bin/lidoff");
+        assert_eq!(resolved, expected);
+        assert_eq!(
+            resolve_executable_path(&old_version.join("bin/lidoff")).unwrap(),
+            expected
+        );
+        let agent = build_agent(30, 300, &resolved).unwrap();
+        assert_eq!(Path::new(&agent.program_arguments[0]), expected);
+
+        fs::remove_file(&opt_path).unwrap();
+        symlink("../Cellar/lidoff/0.5.0", &opt_path).unwrap();
+        fs::remove_dir_all(old_version).unwrap();
+
+        assert_eq!(
+            fs::read(&agent.program_arguments[0]).unwrap(),
+            fs::read(new_version.join("bin/lidoff")).unwrap()
+        );
     }
 }

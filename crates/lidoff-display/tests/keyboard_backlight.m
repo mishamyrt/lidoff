@@ -27,6 +27,12 @@ static bool fail_client = false;
 @end
 
 @implementation KeyboardBrightnessClient
+- (BOOL)enableAutoBrightness:(BOOL)enabled forKeyboard:(unsigned long long)keyboard_id {
+    (void)enabled;
+    (void)keyboard_id;
+    assert(!"brightness writes must preserve automatic brightness");
+    return NO;
+}
 - (id)init {
     self = [super init];
     [[[BacklightTemporary alloc] init] autorelease];
@@ -46,7 +52,7 @@ static bool fail_client = false;
 }
 - (BOOL)setBrightness:(float)brightness forKeyboard:(unsigned long long)keyboard_id {
     assert(keyboard_id == 1);
-    assert(brightness == 0.625f);
+    assert(brightness == 0.0f || brightness == 0.625f);
     [[[BacklightTemporary alloc] init] autorelease];
     return YES;
 }
@@ -60,6 +66,8 @@ int main(void) {
     @autoreleasepool {
         for (int i = 0; i < 100; i++) {
             assert(KeyboardBacklightGet() == 0.625f);
+            assert(live_temporaries == 0);
+            assert(KeyboardBacklightSet(0.0f) == 1);
             assert(live_temporaries == 0);
             assert(KeyboardBacklightSet(0.625f) == 1);
             assert(live_temporaries == 0);

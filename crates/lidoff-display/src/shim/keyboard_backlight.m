@@ -125,12 +125,6 @@ float KeyboardBacklightGet(void) {
 static bool setKeyboardBrightness(id client,
                                   unsigned long long keyboard_id,
                                   float brightness) {
-    SEL auto_selector = sel_registerName("enableAutoBrightness:forKeyboard:");
-    if (class_getInstanceMethod(object_getClass(client), auto_selector)) {
-        ((BOOL (*)(id, SEL, BOOL, unsigned long long))objc_msgSend)(client, auto_selector,
-                                                                    (BOOL)0, keyboard_id);
-    }
-
     SEL fade_selector = sel_registerName("setBrightness:fadeSpeed:commit:forKeyboard:");
     if (class_getInstanceMethod(object_getClass(client), fade_selector)) {
         BOOL ok = ((BOOL (*)(id, SEL, float, int, BOOL, unsigned long long))objc_msgSend)(

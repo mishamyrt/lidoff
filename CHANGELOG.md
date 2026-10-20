@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1](https://github.com/mishamyrt/lidoff/compare/v0.5.0..v0.5.1) - 2026-10-20
+
+### 🚀 Features
+
+- Add cursor lock
+
+### 🐛 Bug Fixes
+
+- Avoid CoreBrightness leak
+- Skip queued dimming during sleep
+- Restore external displays on full close
+- Preserve automatic keyboard brightness
+- Keep Homebrew launch agent path stable
+- Install release archives correctly
+
+### 🚜 Refactor
+
+- Simplify executable path resolving
+- Reuse daemon config
+- Use clap range parsers
+- Simplify partial dimming checks
+- Simplify power observer startup
+- Remove display controller trait
+- Remove duplicate skylight state
+
+### 📚 Documentation
+
+- Add security guide
+
 ## [0.5.0](https://github.com/mishamyrt/lidoff/compare/v0.4.3..v0.5.0) - 2026-05-26
 
 ### 🚀 Features

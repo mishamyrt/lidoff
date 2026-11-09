@@ -1,13 +1,16 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 use lidoff_display::{ExternalDisplayState, InternalDisplayState, KeyboardBacklightState};
 use serde::{Deserialize, Serialize};
 
 use crate::logging;
 
-const RECOVERY_STATE_VERSION: u8 = 3;
+const RECOVERY_STATE_VERSION: u8 = 4;
+const PRE_BOOT_SESSION_RECOVERY_STATE_VERSION: u8 = 3;
 const PRE_KEYBOARD_BACKLIGHT_RECOVERY_STATE_VERSION: u8 = 2;
 const LEGACY_RECOVERY_STATE_VERSION: u8 = 1;
 const RECOVERY_STATE_FILE: &str = "state.bin";
@@ -23,6 +26,13 @@ pub(crate) struct RecoveryStateData {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct PersistedState {
+    version: u8,
+    boot_session_uuid: Option<String>,
+    recovery_state: RecoveryStateData,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct PreBootSessionPersistedState {
     version: u8,
     internal_display_state: Option<InternalDisplayState>,
     external_display_state: Option<ExternalDisplayState>,
@@ -89,7 +99,7 @@ fn load_at_cache_dir(recovery_cache_dir: &Path) -> io::Result<Option<RecoverySta
         Err(error) => return Err(error),
     };
 
-    match decode_state(&bytes) {
+    match decode_state(&bytes, boot_session_uuid()) {
         Ok(state) => Ok(Some(state)),
         Err(error) => Err(io::Error::new(io::ErrorKind::InvalidData, error.to_string())),
     }
@@ -104,28 +114,61 @@ fn save_at_cache_dir(
         fs::create_dir_all(parent)?;
     }
 
-    let bytes = encode_state(recovery_state)
+    let bytes = encode_state(recovery_state, boot_session_uuid())
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
     fs::write(path, bytes)
 }
 
-fn encode_state(recovery_state: &RecoveryStateData) -> bincode::Result<Vec<u8>> {
+fn boot_session_uuid() -> Option<&'static str> {
+    static BOOT_SESSION_UUID: OnceLock<Option<String>> = OnceLock::new();
+    BOOT_SESSION_UUID
+        .get_or_init(|| {
+            let session = Command::new("/usr/sbin/sysctl")
+                .args(["-n", "kern.bootsessionuuid"])
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty());
+            if session.is_none() {
+                logging::error!(
+                    "failed to determine boot session; retaining unverified recovery state"
+                );
+            }
+            session
+        })
+        .as_deref()
+}
+
+fn encode_state(
+    recovery_state: &RecoveryStateData,
+    boot_session: Option<&str>,
+) -> bincode::Result<Vec<u8>> {
     bincode::serialize(&PersistedState {
         version: RECOVERY_STATE_VERSION,
-        internal_display_state: recovery_state.internal_display_state,
-        external_display_state: recovery_state.external_display_state.clone(),
-        keyboard_backlight_state: recovery_state.keyboard_backlight_state,
+        boot_session_uuid: boot_session.map(str::to_owned),
+        recovery_state: recovery_state.clone(),
     })
 }
 
-fn decode_state(bytes: &[u8]) -> bincode::Result<RecoveryStateData> {
+fn decode_state(
+    bytes: &[u8],
+    boot_session: Option<&str>,
+) -> bincode::Result<RecoveryStateData> {
     let Some(&version) = bytes.first() else {
         return Err(Box::new(bincode::ErrorKind::Custom("empty recovery state".to_owned())));
     };
 
-    match version {
+    let mut saved_boot_session = None;
+    let mut recovery_state = match version {
         RECOVERY_STATE_VERSION => {
             let state: PersistedState = bincode::deserialize(bytes)?;
+            saved_boot_session = state.boot_session_uuid;
+            Ok(state.recovery_state)
+        }
+        PRE_BOOT_SESSION_RECOVERY_STATE_VERSION => {
+            let state: PreBootSessionPersistedState = bincode::deserialize(bytes)?;
             Ok(RecoveryStateData {
                 internal_display_state: state.internal_display_state,
                 external_display_state: state.external_display_state,
@@ -163,7 +206,12 @@ fn decode_state(bytes: &[u8]) -> bincode::Result<RecoveryStateData> {
         _ => Err(Box::new(bincode::ErrorKind::Custom(format!(
             "unsupported recovery state version {version}",
         )))),
+    }?;
+    // Display IDs belong to a boot session; legacy caches cannot prove ownership.
+    if boot_session.is_some() && saved_boot_session.as_deref() != boot_session {
+        recovery_state.external_display_state = None;
     }
+    Ok(recovery_state)
 }
 
 fn cleanup_legacy_recovery_file_at(recovery_cache_dir: &Path) -> io::Result<()> {
@@ -232,10 +280,18 @@ mod tests {
             keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.65 }),
         };
 
-        let encoded = encode_state(&recovery_state).unwrap();
-        let decoded = decode_state(&encoded).unwrap();
+        let encoded = encode_state(&recovery_state, Some("boot-a")).unwrap();
+        let decoded = decode_state(&encoded, Some("boot-a")).unwrap();
 
         assert_eq!(decoded, recovery_state);
+
+        let mut after_reboot = recovery_state.clone();
+        after_reboot.external_display_state = None;
+        assert_eq!(decode_state(&encoded, Some("boot-b")).unwrap(), after_reboot);
+        assert_eq!(decode_state(&encoded, None).unwrap(), recovery_state);
+
+        let unverified = encode_state(&recovery_state, None).unwrap();
+        assert_eq!(decode_state(&unverified, Some("boot-a")).unwrap(), after_reboot);
     }
 
     #[test]
@@ -282,7 +338,7 @@ mod tests {
         })
         .unwrap();
 
-        let decoded = decode_state(&encoded).unwrap();
+        let decoded = decode_state(&encoded, None).unwrap();
 
         assert_eq!(
             decoded,
@@ -293,6 +349,9 @@ mod tests {
                 }),
                 keyboard_backlight_state: None,
             }
+        );
+        assert!(
+            decode_state(&encoded, Some("boot-a")).unwrap().external_display_state.is_none()
         );
     }
 
@@ -307,7 +366,7 @@ mod tests {
         })
         .unwrap();
 
-        let decoded = decode_state(&encoded).unwrap();
+        let decoded = decode_state(&encoded, None).unwrap();
 
         assert_eq!(
             decoded,
@@ -318,6 +377,38 @@ mod tests {
                 }),
                 keyboard_backlight_state: None,
             }
+        );
+        assert!(
+            decode_state(&encoded, Some("boot-a")).unwrap().external_display_state.is_none()
+        );
+    }
+
+    #[test]
+    fn legacy_v3_cache_drops_unverified_ids_but_preserves_brightness() {
+        let recovery_state = RecoveryStateData {
+            internal_display_state: Some(InternalDisplayState { brightness: 0.58 }),
+            external_display_state: Some(ExternalDisplayState {
+                skylight_display_ids: vec![3, 6].into(),
+            }),
+            keyboard_backlight_state: Some(KeyboardBacklightState { brightness: 0.65 }),
+        };
+        let encoded = bincode::serialize(&super::PreBootSessionPersistedState {
+            version: super::PRE_BOOT_SESSION_RECOVERY_STATE_VERSION,
+            internal_display_state: recovery_state.internal_display_state,
+            external_display_state: recovery_state.external_display_state.clone(),
+            keyboard_backlight_state: recovery_state.keyboard_backlight_state,
+        })
+        .unwrap();
+
+        assert_eq!(decode_state(&encoded, None).unwrap(), recovery_state);
+        let mut expected = recovery_state;
+        expected.external_display_state = None;
+        assert_eq!(decode_state(&encoded, Some("boot-a")).unwrap(), expected);
+
+        let original_cache = [3, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 6, 0, 0, 0, 0];
+        assert_eq!(
+            decode_state(&original_cache, Some("boot-a")).unwrap(),
+            RecoveryStateData::default()
         );
     }
 }

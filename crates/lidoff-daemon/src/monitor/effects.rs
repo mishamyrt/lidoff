@@ -184,12 +184,12 @@ fn stop_caffeinate(shared_state: &SharedMonitorState) -> bool {
 }
 
 fn restore_external_display_state(shared_state: &SharedMonitorState) -> bool {
-    let Some(saved_state) = lock_state(shared_state).external_display_state.take() else {
+    let Some(mut saved_state) = lock_state(shared_state).external_display_state.take() else {
         return false;
     };
 
     let mut external = ExternalDisplays::new();
-    match external.restore_state(&saved_state) {
+    match external.restore_state(&mut saved_state) {
         Ok(()) => {
             logging::debug!("restored external displays");
             true
@@ -251,44 +251,39 @@ fn apply_internal_display_state(
 
 fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState) -> bool {
     let mut external = ExternalDisplays::new();
-    if lock_state(shared_state).external_display_state.is_none() {
-        let disable_result = match external.capture_and_disable() {
-            Ok(result) => result,
-            Err(ExternalDisplayError::AlreadyDisabled) => return true,
-            Err(error) => {
-                logging::error!("external display disable failed: {error}");
-                return false;
-            }
-        };
-
-        let ExternalDisplayDisableResult { state: saved_state, disabled, failed } =
-            disable_result;
-
-        {
-            let mut state = lock_state(shared_state);
-            if state.external_display_state.is_none() {
-                state.external_display_state = Some(saved_state);
-            }
-        }
-
-        if failed > 0 {
-            logging::error!(
-                "external display disable failed: {}",
-                ExternalDisplayError::DisableFailed { disabled, failed }
-            );
-            return false;
-        }
-
-        return true;
-    }
-
-    match external.disable() {
-        Ok(()) | Err(ExternalDisplayError::AlreadyDisabled) => true,
+    let disable_result = match external.capture_and_disable() {
+        Ok(result) => result,
+        Err(ExternalDisplayError::AlreadyDisabled) => return true,
         Err(error) => {
             logging::error!("external display disable failed: {error}");
-            false
+            return false;
+        }
+    };
+
+    let ExternalDisplayDisableResult { state: saved_state, disabled, failed } = disable_result;
+
+    {
+        let mut state = lock_state(shared_state);
+        if let Some(pending) = state.external_display_state.as_mut() {
+            for id in saved_state.skylight_display_ids {
+                if !pending.skylight_display_ids.contains(&id) {
+                    pending.skylight_display_ids.push(id);
+                }
+            }
+        } else {
+            state.external_display_state = Some(saved_state);
         }
     }
+
+    if failed > 0 {
+        logging::error!(
+            "external display disable failed: {}",
+            ExternalDisplayError::DisableFailed { disabled, failed }
+        );
+        return false;
+    }
+
+    true
 }
 
 fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
@@ -481,11 +476,34 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
-    use super::{MonitorAction, brightness_snapshot_for_dim, execute_monitor_action};
+    use super::{
+        MonitorAction, brightness_snapshot_for_dim,
+        capture_and_disable_external_display_state, execute_monitor_action,
+    };
 
     static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
-    static EXTERNAL_RESTORE_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
     static FAIL_EXTERNAL_RESTORE: AtomicBool = AtomicBool::new(true);
+
+    #[unsafe(export_name = "DisplaysListOnline")]
+    extern "C" fn displays_list_online(
+        display_ids: *mut u32,
+        capacity: usize,
+        count_out: *mut usize,
+    ) -> u8 {
+        assert!(capacity >= 2);
+        unsafe {
+            *display_ids = 1;
+            *display_ids.add(1) = 2;
+            *count_out = 2;
+        }
+        1
+    }
+
+    #[unsafe(export_name = "DisplayIsBuiltin")]
+    extern "C" fn display_is_builtin(display_id: u32) -> u8 {
+        u8::from(display_id == 1)
+    }
 
     #[unsafe(export_name = "BrightnessGet")]
     extern "C" fn brightness_get() -> f32 {
@@ -525,12 +543,11 @@ mod tests {
     }
 
     #[unsafe(export_name = "SkylightRestoreFromState")]
-    extern "C" fn skylight_restore_from_state(
-        _display_ids: *const u32,
-        count: usize,
-    ) -> usize {
-        EXTERNAL_RESTORE_CALLS.fetch_add(1, Ordering::Relaxed);
-        if FAIL_EXTERNAL_RESTORE.load(Ordering::Relaxed) { count - 1 } else { count }
+    extern "C" fn skylight_restore_from_state(display_ids: *const u32, count: usize) -> usize {
+        let display_ids = unsafe { std::slice::from_raw_parts(display_ids, count) };
+        EXTERNAL_RESTORE_IDS.lock().unwrap().extend_from_slice(display_ids);
+        let fail = FAIL_EXTERNAL_RESTORE.load(Ordering::Relaxed);
+        display_ids.iter().filter(|&&id| !fail || id != 6).count()
     }
 
     #[test]
@@ -539,8 +556,14 @@ mod tests {
         use lidoff_display::ExternalDisplayState;
 
         let shared_state = Arc::new(Mutex::new(MonitorState::new()));
-        let saved_state = ExternalDisplayState { skylight_display_ids: vec![2, 3].into() };
-        shared_state.lock().unwrap().external_display_state = Some(saved_state.clone());
+        shared_state.lock().unwrap().external_display_state =
+            Some(ExternalDisplayState { skylight_display_ids: vec![3, 6].into() });
+        assert!(capture_and_disable_external_display_state(&shared_state));
+        let saved_state = ExternalDisplayState { skylight_display_ids: vec![3, 6, 2].into() };
+        assert_eq!(
+            shared_state.lock().unwrap().external_display_state,
+            Some(saved_state.clone())
+        );
         let cache_dir = std::env::temp_dir()
             .join(format!("lidoff-external-sleep-test-{}", std::process::id()));
 
@@ -549,8 +572,25 @@ mod tests {
             MonitorAction::PrepareDisplayStateForSleep { log_restore: false },
             &cache_dir,
         );
-        assert_eq!(EXTERNAL_RESTORE_CALLS.load(Ordering::Relaxed), 1);
-        assert_eq!(shared_state.lock().unwrap().external_display_state, Some(saved_state));
+        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2]);
+        let pending_state = ExternalDisplayState { skylight_display_ids: vec![6].into() };
+        assert_eq!(
+            shared_state.lock().unwrap().external_display_state,
+            Some(pending_state.clone())
+        );
+        assert_eq!(
+            crate::recovery_state::load(&cache_dir).unwrap().external_display_state,
+            Some(pending_state.clone())
+        );
+
+        let action = handle_fully_closed_locked(
+            &mut shared_state.lock().unwrap(),
+            std::time::Instant::now(),
+            false,
+        );
+        execute_monitor_action(&shared_state, action, &cache_dir);
+        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2, 6]);
+        assert_eq!(shared_state.lock().unwrap().external_display_state, Some(pending_state));
 
         FAIL_EXTERNAL_RESTORE.store(false, Ordering::Relaxed);
         let action = handle_fully_closed_locked(
@@ -561,9 +601,17 @@ mod tests {
         assert!(matches!(action, MonitorAction::PrepareDisplayStateForSleep { .. }));
         execute_monitor_action(&shared_state, action, &cache_dir);
 
-        assert_eq!(EXTERNAL_RESTORE_CALLS.load(Ordering::Relaxed), 2);
+        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2, 6, 6]);
         assert!(shared_state.lock().unwrap().external_display_state.is_none());
         assert!(!cache_dir.join("state.bin").exists());
+        assert_eq!(
+            handle_fully_closed_locked(
+                &mut shared_state.lock().unwrap(),
+                std::time::Instant::now(),
+                false,
+            ),
+            MonitorAction::None
+        );
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
 

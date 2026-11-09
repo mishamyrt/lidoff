@@ -78,24 +78,21 @@ impl ExternalDisplays {
         }
     }
 
+    /// Restores displays and removes successfully restored IDs from the state.
     pub fn restore_state(
         &mut self,
-        state: &ExternalDisplayState,
+        state: &mut ExternalDisplayState,
     ) -> Result<(), ExternalDisplayError> {
-        if state.skylight_display_ids.is_empty() {
-            EXTERNAL_DISPLAYS_DISABLED.store(false, Ordering::Relaxed);
-            return Ok(());
-        }
-
-        let restored = restore_skylight_state(&state.skylight_display_ids);
+        let total = state.skylight_display_ids.len();
+        state
+            .skylight_display_ids
+            .retain(|id| restore_skylight_state(std::slice::from_ref(id)) == 0);
+        let failed = state.skylight_display_ids.len();
 
         EXTERNAL_DISPLAYS_DISABLED.store(false, Ordering::Relaxed);
 
-        if restored < state.skylight_display_ids.len() {
-            Err(ExternalDisplayError::RestoreFailed {
-                restored,
-                failed: state.skylight_display_ids.len() - restored,
-            })
+        if failed > 0 {
+            Err(ExternalDisplayError::RestoreFailed { restored: total - failed, failed })
         } else {
             Ok(())
         }

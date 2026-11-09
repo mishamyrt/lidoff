@@ -87,13 +87,11 @@ size_t SkylightRestoreFromState(const CGDirectDisplayID *display_ids, size_t cou
 
     size_t restored = 0;
     for (size_t i = 0; i < count; i++) {
-        if (skylightSetDisplayEnabled(display_ids[i], true)) {
+        bool configured = skylightSetDisplayEnabled(display_ids[i], true);
+        // A stale ID must not roll back another display's successful restore.
+        if (SkylightFinalize() && configured) {
             restored++;
         }
-    }
-
-    if (!SkylightFinalize()) {
-        restored = 0;
     }
 
     return restored;

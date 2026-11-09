@@ -251,44 +251,39 @@ fn apply_internal_display_state(
 
 fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState) -> bool {
     let mut external = ExternalDisplays::new();
-    if lock_state(shared_state).external_display_state.is_none() {
-        let disable_result = match external.capture_and_disable() {
-            Ok(result) => result,
-            Err(ExternalDisplayError::AlreadyDisabled) => return true,
-            Err(error) => {
-                logging::error!("external display disable failed: {error}");
-                return false;
-            }
-        };
-
-        let ExternalDisplayDisableResult { state: saved_state, disabled, failed } =
-            disable_result;
-
-        {
-            let mut state = lock_state(shared_state);
-            if state.external_display_state.is_none() {
-                state.external_display_state = Some(saved_state);
-            }
-        }
-
-        if failed > 0 {
-            logging::error!(
-                "external display disable failed: {}",
-                ExternalDisplayError::DisableFailed { disabled, failed }
-            );
-            return false;
-        }
-
-        return true;
-    }
-
-    match external.disable() {
-        Ok(()) | Err(ExternalDisplayError::AlreadyDisabled) => true,
+    let disable_result = match external.capture_and_disable() {
+        Ok(result) => result,
+        Err(ExternalDisplayError::AlreadyDisabled) => return true,
         Err(error) => {
             logging::error!("external display disable failed: {error}");
-            false
+            return false;
+        }
+    };
+
+    let ExternalDisplayDisableResult { state: saved_state, disabled, failed } = disable_result;
+
+    {
+        let mut state = lock_state(shared_state);
+        if let Some(pending) = state.external_display_state.as_mut() {
+            for id in saved_state.skylight_display_ids {
+                if !pending.skylight_display_ids.contains(&id) {
+                    pending.skylight_display_ids.push(id);
+                }
+            }
+        } else {
+            state.external_display_state = Some(saved_state);
         }
     }
+
+    if failed > 0 {
+        logging::error!(
+            "external display disable failed: {}",
+            ExternalDisplayError::DisableFailed { disabled, failed }
+        );
+        return false;
+    }
+
+    true
 }
 
 fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
@@ -481,11 +476,34 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
-    use super::{MonitorAction, brightness_snapshot_for_dim, execute_monitor_action};
+    use super::{
+        MonitorAction, brightness_snapshot_for_dim,
+        capture_and_disable_external_display_state, execute_monitor_action,
+    };
 
     static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
     static EXTERNAL_RESTORE_CALLS: AtomicUsize = AtomicUsize::new(0);
     static FAIL_EXTERNAL_RESTORE: AtomicBool = AtomicBool::new(true);
+
+    #[unsafe(export_name = "DisplaysListOnline")]
+    extern "C" fn displays_list_online(
+        display_ids: *mut u32,
+        capacity: usize,
+        count_out: *mut usize,
+    ) -> u8 {
+        assert!(capacity >= 2);
+        unsafe {
+            *display_ids = 1;
+            *display_ids.add(1) = 2;
+            *count_out = 2;
+        }
+        1
+    }
+
+    #[unsafe(export_name = "DisplayIsBuiltin")]
+    extern "C" fn display_is_builtin(display_id: u32) -> u8 {
+        u8::from(display_id == 1)
+    }
 
     #[unsafe(export_name = "BrightnessGet")]
     extern "C" fn brightness_get() -> f32 {
@@ -539,8 +557,14 @@ mod tests {
         use lidoff_display::ExternalDisplayState;
 
         let shared_state = Arc::new(Mutex::new(MonitorState::new()));
-        let saved_state = ExternalDisplayState { skylight_display_ids: vec![2, 3].into() };
-        shared_state.lock().unwrap().external_display_state = Some(saved_state.clone());
+        shared_state.lock().unwrap().external_display_state =
+            Some(ExternalDisplayState { skylight_display_ids: vec![3, 6].into() });
+        assert!(capture_and_disable_external_display_state(&shared_state));
+        let saved_state = ExternalDisplayState { skylight_display_ids: vec![3, 6, 2].into() };
+        assert_eq!(
+            shared_state.lock().unwrap().external_display_state,
+            Some(saved_state.clone())
+        );
         let cache_dir = std::env::temp_dir()
             .join(format!("lidoff-external-sleep-test-{}", std::process::id()));
 

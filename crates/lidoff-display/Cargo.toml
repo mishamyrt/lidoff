@@ -11,7 +11,7 @@ license = { workspace = true }
 build = "build.rs"
 
 [dependencies]
-serde = { workspace = true, features = ["derive"] }
+rkyv = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 

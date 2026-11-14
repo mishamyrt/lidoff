@@ -6,7 +6,7 @@
 - CI quality gates are `make lint` (`cargo clippy --all`) and `make test` (`cargo test --workspace`) on `macos-latest`.
 - `make check` runs tests first, then `cargo fmt --all --check`, then clippy; run it before handing off code changes when feasible.
 - `make fmt` runs `cargo fmt --all` and `clang-format -i` over `crates/**/*.c` and `crates/**/*.h`; install `clang-format` via LLVM if it is missing.
-- Focused checks: `cargo test -p lidoff-daemon`, `cargo test -p lidoff-daemon recovery_state::tests::legacy_v2_state_decodes_without_keyboard_backlight_state`, or `cargo clippy -p lidoff-daemon`.
+- Focused checks: `cargo test -p lidoff-daemon`, `cargo test -p lidoff-daemon recovery_state::tests::invalid_cache_is_removed`, or `cargo clippy -p lidoff-daemon`.
 
 ## Architecture
 
@@ -20,7 +20,7 @@
 
 - Build/test/linking expects macOS frameworks from the native shims (`CoreFoundation`, `CoreGraphics`, `IOKit`, `objc`); QA intentionally runs on macOS.
 - Running the daemon for real requires an Apple Silicon MacBook lid-angle sensor; unit tests avoid that hardware path, but `lidoff-daemon::run` returns false if sensor initialization fails.
-- Recovery state is a bincode `state.bin` under `~/Library/Caches/co.myrt.lidoff`; keep v1/v2 decode compatibility tests if changing persisted state, and note that old `state.plist` is only removed as legacy cleanup.
+- Recovery state is an rkyv `state.bin` under `~/Library/Caches/co.myrt.lidoff`; caches from other app versions or invalid formats are removed on load, without compatibility decoding. Old `state.plist` is only removed as legacy cleanup.
 
 ## Release Notes
 

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -18,7 +18,7 @@ pub struct ExternalDisplays {
     _not_thread_safe: PhantomData<Rc<()>>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Archive, Serialize, Deserialize)]
 pub struct ExternalDisplayState {
     pub skylight_display_ids: SmallVec<[u32; 4]>,
 }

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::shim::{brightness_get, brightness_set};
@@ -11,7 +11,7 @@ pub struct InternalDisplay {
     _not_thread_safe: PhantomData<Rc<()>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Archive, Serialize, Deserialize)]
 pub struct InternalDisplayState {
     pub brightness: f32,
 }

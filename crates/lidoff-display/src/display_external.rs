@@ -54,30 +54,6 @@ impl ExternalDisplays {
         EXTERNAL_DISPLAYS_DISABLED.load(Ordering::Relaxed)
     }
 
-    pub fn disable(&mut self) -> Result<(), ExternalDisplayError> {
-        if self.is_disabled() {
-            return Err(ExternalDisplayError::AlreadyDisabled);
-        }
-
-        let displays =
-            online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
-
-        let (mut disabled, mut failed) = disable_external_displays(&displays);
-
-        let committed = finalize_skylight();
-        if !committed {
-            failed += disabled;
-            disabled = 0;
-        }
-        EXTERNAL_DISPLAYS_DISABLED.store(disabled > 0, Ordering::Relaxed);
-
-        if failed > 0 {
-            Err(ExternalDisplayError::DisableFailed { disabled, failed })
-        } else {
-            Ok(())
-        }
-    }
-
     /// Restores displays and removes successfully restored IDs from the state.
     pub fn restore_state(
         &mut self,
@@ -121,20 +97,6 @@ impl ExternalDisplays {
 
         Ok(ExternalDisplayDisableResult { state, disabled, failed })
     }
-}
-
-fn disable_external_displays(displays: &[u32]) -> (usize, usize) {
-    let mut disabled = 0;
-    let mut failed = 0;
-    for display_id in external_display_ids(displays) {
-        if disable_skylight_display(display_id) {
-            disabled += 1;
-        } else {
-            failed += 1;
-        }
-    }
-
-    (disabled, failed)
 }
 
 fn capture_disabled_external_displays(displays: &[u32]) -> (ExternalDisplayState, usize) {

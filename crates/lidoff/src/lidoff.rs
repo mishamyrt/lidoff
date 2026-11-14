@@ -21,6 +21,9 @@ pub(crate) enum LidoffError {
     #[error("failed to install launch agent")]
     Install(#[source] lunchd::AgentError),
 
+    #[error("failed to create launch agent directory")]
+    CreateAgentDirectory(#[source] io::Error),
+
     #[error("failed to uninstall launch agent")]
     Uninstall(#[source] lunchd::AgentError),
 
@@ -64,6 +67,9 @@ impl Lidoff {
             return Err(LidoffError::AlreadyInstalled);
         }
 
+        if let Some(parent) = agent.path().map_err(LidoffError::Install)?.parent() {
+            fs::create_dir_all(parent).map_err(LidoffError::CreateAgentDirectory)?;
+        }
         agent.install().map_err(LidoffError::Install)?;
         Ok(CommandOutcome::Message("service is successfully installed"))
     }

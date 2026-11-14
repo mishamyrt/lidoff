@@ -383,10 +383,12 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
             }
         };
 
-        let mut state = lock_state(shared_state);
-        if state.keyboard_backlight_state.is_none() {
-            state.keyboard_backlight_state =
-                Some(KeyboardBacklightState { brightness: current_state.brightness });
+        {
+            let mut state = lock_state(shared_state);
+            if state.keyboard_backlight_state.is_none() {
+                state.keyboard_backlight_state =
+                    Some(KeyboardBacklightState { brightness: current_state.brightness });
+            }
         }
 
         return handle_keyboard_backlight_disable_result(
@@ -472,14 +474,21 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
     use super::{
         MonitorAction, brightness_snapshot_for_dim,
-        capture_and_disable_external_display_state, execute_monitor_action,
+        capture_and_disable_external_display_state,
+        capture_and_disable_keyboard_backlight_state, execute_monitor_action,
     };
+
+    thread_local! {
+        static KEYBOARD_BRIGHTNESS: Cell<f32> = const { Cell::new(0.6) };
+        static FAIL_KEYBOARD_WRITE: Cell<bool> = const { Cell::new(false) };
+    }
 
     static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
     static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
@@ -517,6 +526,20 @@ mod tests {
         0
     }
 
+    #[unsafe(export_name = "KeyboardBacklightGet")]
+    extern "C" fn keyboard_backlight_get() -> f32 {
+        KEYBOARD_BRIGHTNESS.get()
+    }
+
+    #[unsafe(export_name = "KeyboardBacklightSet")]
+    extern "C" fn keyboard_backlight_set(brightness: f32) -> u8 {
+        if FAIL_KEYBOARD_WRITE.get() {
+            return 0;
+        }
+        KEYBOARD_BRIGHTNESS.set(brightness);
+        1
+    }
+
     #[unsafe(export_name = "CursorIsLocked")]
     extern "C" fn cursor_is_locked() -> u8 {
         0
@@ -548,6 +571,24 @@ mod tests {
         EXTERNAL_RESTORE_IDS.lock().unwrap().extend_from_slice(display_ids);
         let fail = FAIL_EXTERNAL_RESTORE.load(Ordering::Relaxed);
         display_ids.iter().filter(|&&id| !fail || id != 6).count()
+    }
+
+    #[test]
+    fn keyboard_write_failure_does_not_deadlock() {
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        let worker_state = shared_state.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            FAIL_KEYBOARD_WRITE.set(true);
+            tx.send(capture_and_disable_keyboard_backlight_state(&worker_state)).unwrap();
+        });
+
+        assert!(
+            !rx.recv_timeout(std::time::Duration::from_secs(5))
+                .expect("keyboard disable deadlocked")
+        );
+        worker.join().unwrap();
+        assert!(shared_state.lock().unwrap().keyboard_backlight_state.is_none());
     }
 
     #[test]

@@ -299,7 +299,7 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
         changed = true;
     }
 
-    if disable_keyboard_backlight(shared_state) {
+    if capture_and_disable_keyboard_backlight_state(shared_state) {
         changed = true;
     }
 
@@ -628,6 +628,42 @@ mod tests {
             assert_eq!(recovery_state::load(&cache_dir), Some(pending));
             std::fs::remove_dir_all(cache_dir).unwrap();
         }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn keyboard_read_retry_saves_brightness_for_restore() {
+        use lidoff_display::{
+            ExternalDisplayState, InternalDisplayState, KeyboardBacklightState,
+        };
+
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        {
+            let mut state = shared_state.lock().unwrap();
+            state.internal_display_state = Some(InternalDisplayState { brightness: 0.5 });
+            state.external_display_state = Some(ExternalDisplayState::default());
+            state.caffeinate_active = true;
+        }
+        BRIGHTNESS.set(0.0);
+        KEYBOARD_BRIGHTNESS.set(-1.0);
+        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state));
+
+        KEYBOARD_BRIGHTNESS.set(0.6);
+        let cache_dir = std::env::temp_dir()
+            .join(format!("lidoff-keyboard-retry-test-{}", std::process::id()));
+        execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
+
+        let saved_state = Some(KeyboardBacklightState { brightness: 0.6 });
+        assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.0);
+        assert_eq!(shared_state.lock().unwrap().keyboard_backlight_state, saved_state);
+        assert_eq!(
+            crate::recovery_state::load(&cache_dir).unwrap().keyboard_backlight_state,
+            saved_state
+        );
+        assert!(super::restore_keyboard_backlight_state(&shared_state, false, true));
+        assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
+        assert!(shared_state.lock().unwrap().keyboard_backlight_state.is_none());
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
     #[test]

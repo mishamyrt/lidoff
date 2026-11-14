@@ -58,10 +58,7 @@ fn execute_monitor_action_locked(
             prepare_display_state_for_sleep_locked(shared_state, log_restore);
             persist_recovery_state(shared_state, recovery_cache_dir);
         }
-        MonitorAction::ResumePartialDim => {
-            resume_partial_dim(shared_state, recovery_cache_dir);
-        }
-        MonitorAction::StartPartialDim => {
+        MonitorAction::ResumePartialDim | MonitorAction::StartPartialDim => {
             start_partial_dim(shared_state, recovery_cache_dir);
         }
     }
@@ -253,31 +250,39 @@ fn apply_internal_display_state(
     }
 }
 
-fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState) -> bool {
+fn capture_and_disable_external_display_state(
+    shared_state: &SharedMonitorState,
+    recovery_cache_dir: &Path,
+) -> bool {
     let mut external = ExternalDisplays::new();
-    let pending = lock_state(shared_state).external_display_state.clone().unwrap_or_default();
-    let disable_result = match external.capture_and_disable(&pending) {
-        Ok(result) => result,
+    let mut candidates = match external.get_state() {
+        Ok(state) => state,
         Err(error) => {
-            logging::error!("external display disable failed: {error}");
+            logging::error!("external display capture failed: {error}");
             return false;
         }
     };
-
-    let ExternalDisplayDisableResult { state: saved_state, disabled, failed } = disable_result;
-
-    {
-        let mut state = lock_state(shared_state);
-        if let Some(pending) = state.external_display_state.as_mut() {
-            for id in saved_state.skylight_display_ids {
-                if !pending.skylight_display_ids.contains(&id) {
-                    pending.skylight_display_ids.push(id);
-                }
-            }
-        } else if !saved_state.skylight_display_ids.is_empty() {
-            state.external_display_state = Some(saved_state);
-        }
+    let previous = lock_state(shared_state).external_display_state.clone();
+    let mut pending = previous.clone().unwrap_or_default();
+    candidates.skylight_display_ids.retain(|id| !pending.skylight_display_ids.contains(id));
+    if candidates.skylight_display_ids.is_empty() {
+        return false;
     }
+
+    pending.skylight_display_ids.extend_from_slice(&candidates.skylight_display_ids);
+    lock_state(shared_state).external_display_state = Some(pending);
+    if !persist_recovery_state(shared_state, recovery_cache_dir) {
+        lock_state(shared_state).external_display_state = previous;
+        return false;
+    }
+
+    let ExternalDisplayDisableResult { state: saved_state, disabled, failed } =
+        external.disable_from_state(&candidates);
+    let mut pending = previous.unwrap_or_default();
+    pending.skylight_display_ids.extend_from_slice(&saved_state.skylight_display_ids);
+    lock_state(shared_state).external_display_state =
+        (!pending.skylight_display_ids.is_empty()).then_some(pending);
+    persist_recovery_state(shared_state, recovery_cache_dir);
 
     if failed > 0 {
         logging::error!(
@@ -285,42 +290,7 @@ fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState)
             ExternalDisplayError::DisableFailed { disabled, failed }
         );
     }
-
     disabled > 0
-}
-
-fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
-    let mut changed = false;
-    let mut internal = InternalDisplay::new();
-    if !internal.is_disabled() {
-        if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
-            logging::error!("failed to dim display");
-            return;
-        }
-
-        logging::debug!("dimming display to 0.0");
-        changed = true;
-    }
-
-    if capture_and_disable_keyboard_backlight_state(shared_state) {
-        changed = true;
-    }
-
-    if lock_cursor() {
-        changed = true;
-    }
-
-    if capture_and_disable_external_display_state(shared_state) {
-        changed = true;
-    }
-
-    if start_caffeinate(shared_state) {
-        changed = true;
-    }
-
-    if changed {
-        persist_recovery_state(shared_state, recovery_cache_dir);
-    }
 }
 
 fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
@@ -345,6 +315,13 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
         previous
     };
 
+    if (previous_internal_state.is_none() || current_state.brightness > 0.0)
+        && !persist_recovery_state(shared_state, recovery_cache_dir)
+    {
+        lock_state(shared_state).internal_display_state = previous_internal_state;
+        return;
+    }
+
     if matches!(
         internal.disable_from_state(current_state),
         Err(InternalDisplayError::BrightnessFailed)
@@ -355,16 +332,20 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
         return;
     }
 
-    logging::debug!("dimming display to 0.0");
+    if current_state.brightness > 0.0 {
+        logging::debug!("dimming display to 0.0");
+    }
 
-    capture_and_disable_keyboard_backlight_state(shared_state);
-    capture_and_disable_external_display_state(shared_state);
+    capture_and_disable_keyboard_backlight_state(shared_state, recovery_cache_dir);
+    capture_and_disable_external_display_state(shared_state, recovery_cache_dir);
     start_caffeinate(shared_state);
-    persist_recovery_state(shared_state, recovery_cache_dir);
-    lock_cursor();
+    lock_cursor(shared_state, recovery_cache_dir);
 }
 
-fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorState) -> bool {
+fn capture_and_disable_keyboard_backlight_state(
+    shared_state: &SharedMonitorState,
+    recovery_cache_dir: &Path,
+) -> bool {
     let mut keyboard = KeyboardBacklight::new();
     if lock_state(shared_state).keyboard_backlight_state.is_none() {
         let current_state = match keyboard.get_state() {
@@ -383,16 +364,18 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
             }
         }
 
+        if !persist_recovery_state(shared_state, recovery_cache_dir) {
+            lock_state(shared_state).keyboard_backlight_state = None;
+            return false;
+        }
         return handle_keyboard_backlight_disable_result(
             keyboard.disable_from_state(current_state),
         );
     }
 
-    disable_keyboard_backlight()
-}
-
-fn disable_keyboard_backlight() -> bool {
-    let mut keyboard = KeyboardBacklight::new();
+    if keyboard.is_disabled() || !persist_recovery_state(shared_state, recovery_cache_dir) {
+        return false;
+    }
     handle_keyboard_backlight_disable_result(keyboard.disable())
 }
 
@@ -412,8 +395,11 @@ fn handle_keyboard_backlight_disable_result(
     }
 }
 
-fn lock_cursor() -> bool {
+fn lock_cursor(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) -> bool {
     let mut cursor = Cursor::new();
+    if cursor.is_locked() || !persist_recovery_state(shared_state, recovery_cache_dir) {
+        return false;
+    }
     match cursor.lock() {
         Ok(()) => {
             logging::debug!("locked cursor movement");
@@ -489,6 +475,8 @@ mod tests {
         static SENSOR_INIT_SUCCEEDS: Cell<bool> = const { Cell::new(false) };
         static SENSOR_ANGLES: RefCell<std::collections::VecDeque<i32>> = const { RefCell::new(std::collections::VecDeque::new()) };
         static SENSOR_READS: Cell<usize> = const { Cell::new(0) };
+        static CHECK_RECOVERY_CACHE: RefCell<Option<std::path::PathBuf>> = const { RefCell::new(None) };
+        static CAFFEINATE_ACTIVE: Cell<bool> = const { Cell::new(false) };
     }
 
     #[unsafe(export_name = "DisplaysListOnline")]
@@ -524,6 +512,9 @@ mod tests {
         if !ALLOW_BRIGHTNESS_WRITE.get() {
             return 0;
         }
+        if let Some(saved) = cached_state_before_effect() {
+            assert!(saved.internal_display_state.is_some());
+        }
         BRIGHTNESS.set(brightness);
         1
     }
@@ -538,6 +529,9 @@ mod tests {
         if FAIL_KEYBOARD_WRITE.get() {
             return 0;
         }
+        if let Some(saved) = cached_state_before_effect() {
+            assert!(saved.keyboard_backlight_state.is_some());
+        }
         KEYBOARD_BRIGHTNESS.set(brightness);
         1
     }
@@ -549,6 +543,9 @@ mod tests {
 
     #[unsafe(export_name = "CursorLock")]
     extern "C" fn cursor_lock() -> u8 {
+        if let Some(saved) = cached_state_before_effect() {
+            assert!(saved.internal_display_state.is_some());
+        }
         CURSOR_LOCKED.set(true);
         1
     }
@@ -569,6 +566,15 @@ mod tests {
 
     #[unsafe(export_name = "SkylightDisableDisplay")]
     extern "C" fn skylight_disable_display(display_id: u32) -> u8 {
+        if let Some(saved) = cached_state_before_effect() {
+            assert!(
+                saved
+                    .external_display_state
+                    .unwrap()
+                    .skylight_display_ids
+                    .contains(&display_id)
+            );
+        }
         EXTERNAL_DISABLE_IDS.with_borrow_mut(|ids| ids.push(display_id));
         u8::from(display_id != FAIL_EXTERNAL_DISABLE.get())
     }
@@ -585,10 +591,17 @@ mod tests {
     fn keyboard_write_failure_does_not_deadlock() {
         let shared_state = Arc::new(Mutex::new(MonitorState::new()));
         let worker_state = shared_state.clone();
+        let cache_dir =
+            std::env::temp_dir().join(format!("lidoff-keyboard-write-{}", std::process::id()));
+        let worker_cache = cache_dir.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
             FAIL_KEYBOARD_WRITE.set(true);
-            tx.send(capture_and_disable_keyboard_backlight_state(&worker_state)).unwrap();
+            tx.send(capture_and_disable_keyboard_backlight_state(
+                &worker_state,
+                &worker_cache,
+            ))
+            .unwrap();
         });
 
         assert!(
@@ -600,6 +613,7 @@ mod tests {
             shared_state.lock().unwrap().keyboard_backlight_state,
             Some(lidoff_display::KeyboardBacklightState { brightness: 0.6 })
         );
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
     #[test]
@@ -609,17 +623,20 @@ mod tests {
 
         let shared_state = Arc::new(Mutex::new(MonitorState::new()));
         let saved = Some(KeyboardBacklightState { brightness: 0.6 });
+        let cache_dir = std::env::temp_dir()
+            .join(format!("lidoff-keyboard-write-retry-{}", std::process::id()));
         shared_state.lock().unwrap().keyboard_backlight_state = saved;
         KEYBOARD_BRIGHTNESS.set(-1.0);
         FAIL_KEYBOARD_WRITE.set(true);
-        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state));
+        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state, &cache_dir));
         assert_eq!(shared_state.lock().unwrap().keyboard_backlight_state, saved);
 
         KEYBOARD_BRIGHTNESS.set(0.0);
         FAIL_KEYBOARD_WRITE.set(false);
-        capture_and_disable_keyboard_backlight_state(&shared_state);
+        capture_and_disable_keyboard_backlight_state(&shared_state, &cache_dir);
         assert!(super::restore_keyboard_backlight_state(&shared_state, false, true));
         assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
     #[test]
@@ -681,6 +698,7 @@ mod tests {
             }
             let cache_dir = std::env::temp_dir()
                 .join(format!("lidoff-external-retry-{}", std::process::id()));
+            CHECK_RECOVERY_CACHE.set(Some(cache_dir.clone()));
             execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
 
             FAIL_EXTERNAL_DISABLE.set(0);
@@ -764,11 +782,12 @@ mod tests {
         }
         BRIGHTNESS.set(0.0);
         KEYBOARD_BRIGHTNESS.set(-1.0);
-        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state));
-
-        KEYBOARD_BRIGHTNESS.set(0.6);
         let cache_dir = std::env::temp_dir()
             .join(format!("lidoff-keyboard-retry-test-{}", std::process::id()));
+        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state, &cache_dir));
+
+        KEYBOARD_BRIGHTNESS.set(0.6);
+        CHECK_RECOVERY_CACHE.set(Some(cache_dir.clone()));
         execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
 
         let saved_state = Some(KeyboardBacklightState { brightness: 0.6 });
@@ -792,15 +811,11 @@ mod tests {
         let shared_state = Arc::new(Mutex::new(MonitorState::new()));
         shared_state.lock().unwrap().external_display_state =
             Some(ExternalDisplayState { skylight_display_ids: vec![3, 6].into() });
-        assert!(capture_and_disable_external_display_state(&shared_state));
-        let saved_state = ExternalDisplayState { skylight_display_ids: vec![3, 6, 2].into() };
-        assert_eq!(
-            shared_state.lock().unwrap().external_display_state,
-            Some(saved_state.clone())
-        );
         let cache_dir = std::env::temp_dir()
             .join(format!("lidoff-external-sleep-test-{}", std::process::id()));
-
+        assert!(capture_and_disable_external_display_state(&shared_state, &cache_dir));
+        let saved_state = ExternalDisplayState { skylight_display_ids: vec![3, 6, 2].into() };
+        assert_eq!(shared_state.lock().unwrap().external_display_state, Some(saved_state));
         execute_monitor_action(
             &shared_state,
             MonitorAction::PrepareDisplayStateForSleep { log_restore: false },
@@ -899,11 +914,13 @@ mod tests {
 
     #[unsafe(export_name = "CaffeinateStart")]
     extern "C" fn caffeinate_start() -> u8 {
+        CAFFEINATE_ACTIVE.set(true);
         0
     }
 
     #[unsafe(export_name = "CaffeinateStop")]
     extern "C" fn caffeinate_stop() -> u8 {
+        CAFFEINATE_ACTIVE.set(false);
         0
     }
 
@@ -975,5 +992,62 @@ mod tests {
         assert_eq!(EXTERNAL_RESTORE_IDS.with_borrow(Clone::clone), [2]);
         assert!(!cache_dir.join("state.bin").exists());
         std::fs::remove_dir_all(cache_dir).unwrap();
+    }
+
+    fn cached_state_before_effect() -> Option<crate::recovery_state::RecoveryStateData> {
+        CHECK_RECOVERY_CACHE.with_borrow(|cache| {
+            cache.as_ref().map(|path| {
+                crate::recovery_state::load(path)
+                    .expect("recovery state must precede hardware changes")
+            })
+        })
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn dimming_saves_each_snapshot_before_changing_hardware() {
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        let cache_dir = std::env::temp_dir()
+            .join(format!("lidoff-save-before-dim-{}", std::process::id()));
+        CHECK_RECOVERY_CACHE.set(Some(cache_dir.clone()));
+        ALLOW_BRIGHTNESS_WRITE.set(true);
+        BRIGHTNESS.set(0.5);
+        KEYBOARD_BRIGHTNESS.set(0.6);
+        execute_monitor_action(&shared_state, MonitorAction::StartPartialDim, &cache_dir);
+        assert_eq!(BRIGHTNESS.get(), 0.0);
+        assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.0);
+        assert!(CURSOR_LOCKED.get());
+        assert!(CAFFEINATE_ACTIVE.get());
+        let saved = crate::recovery_state::load(&cache_dir).unwrap();
+        assert_eq!(saved.internal_display_state.unwrap().brightness, 0.5);
+        assert_eq!(saved.keyboard_backlight_state.unwrap().brightness, 0.6);
+        assert_eq!(saved.external_display_state.unwrap().skylight_display_ids.as_slice(), [2]);
+        std::fs::remove_dir_all(cache_dir).unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn failed_recovery_save_prevents_dimming() {
+        use lidoff_display::InternalDisplayState;
+        let cache_dir = std::env::temp_dir()
+            .join(format!("lidoff-save-before-dim-failure-{}", std::process::id()));
+        std::fs::write(&cache_dir, b"not a directory").unwrap();
+        for action in [MonitorAction::StartPartialDim, MonitorAction::ResumePartialDim] {
+            let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+            let previous = (action == MonitorAction::ResumePartialDim)
+                .then_some(InternalDisplayState { brightness: 0.7 });
+            shared_state.lock().unwrap().internal_display_state = previous;
+            ALLOW_BRIGHTNESS_WRITE.set(true);
+            BRIGHTNESS.set(0.5);
+            KEYBOARD_BRIGHTNESS.set(0.6);
+            execute_monitor_action(&shared_state, action, &cache_dir);
+            assert_eq!(BRIGHTNESS.get(), 0.5);
+            assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
+            assert!(!CURSOR_LOCKED.get());
+            assert!(!CAFFEINATE_ACTIVE.get());
+            assert!(EXTERNAL_DISABLE_IDS.with_borrow(Vec::is_empty));
+            assert_eq!(shared_state.lock().unwrap().internal_display_state, previous);
+        }
+        std::fs::remove_file(cache_dir).unwrap();
     }
 }

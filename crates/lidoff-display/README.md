@@ -6,7 +6,7 @@ This crate wraps the native C shims for internal display brightness, external di
 
 - Brightness values are normalized floats and restored through clamped `0.0..=1.0` values.
 - Controllers are marked non-thread-safe because the underlying macOS APIs and shim state are process-global.
-- External display disabling tracks only displays successfully captured by Skylight, so partial failures can be restored safely.
+- Capture external display IDs with `get_state()` and persist them before calling `disable_from_state()`. Its result identifies successfully disabled displays, so partial failures can be restored safely.
 - Display state types implement `Serialize`/`Deserialize` because `lidoff-daemon` persists them for recovery.
 - Cursor locking uses CoreGraphics mouse-cursor association, so it works with any pointing device.
 

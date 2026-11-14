@@ -62,15 +62,19 @@ impl ExternalDisplays {
         }
     }
 
-    pub fn capture_and_disable(
-        &mut self,
-        already_disabled: &ExternalDisplayState,
-    ) -> Result<ExternalDisplayDisableResult, ExternalDisplayError> {
+    pub fn get_state(&mut self) -> Result<ExternalDisplayState, ExternalDisplayError> {
         let displays =
             online_displays().ok_or(ExternalDisplayError::GetOnlineDisplaysFailed)?;
+        Ok(ExternalDisplayState {
+            skylight_display_ids: external_display_ids(&displays).collect(),
+        })
+    }
 
-        let (mut state, mut failed) =
-            capture_disabled_external_displays(&displays, already_disabled);
+    pub fn disable_from_state(
+        &mut self,
+        state: &ExternalDisplayState,
+    ) -> ExternalDisplayDisableResult {
+        let (mut state, mut failed) = capture_disabled_external_displays(state);
         let mut disabled = state.skylight_display_ids.len();
 
         let committed = finalize_skylight();
@@ -79,20 +83,16 @@ impl ExternalDisplays {
             state.skylight_display_ids.clear();
             disabled = 0;
         }
-        Ok(ExternalDisplayDisableResult { state, disabled, failed })
+        ExternalDisplayDisableResult { state, disabled, failed }
     }
 }
 
 fn capture_disabled_external_displays(
-    displays: &[u32],
-    already_disabled: &ExternalDisplayState,
+    displays: &ExternalDisplayState,
 ) -> (ExternalDisplayState, usize) {
     let mut skylight_display_ids = SmallVec::new();
     let mut failed = 0;
-    for display_id in external_display_ids(displays) {
-        if already_disabled.skylight_display_ids.contains(&display_id) {
-            continue;
-        }
+    for &display_id in &displays.skylight_display_ids {
         if disable_skylight_display(display_id) {
             skylight_display_ids.push(display_id);
         } else {

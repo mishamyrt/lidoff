@@ -13,30 +13,36 @@ fn recovery_state_data(state: &MonitorState) -> RecoveryStateData {
     }
 }
 
-fn persist_recovery_state_data(recovery_state: &RecoveryStateData, recovery_cache_dir: &Path) {
+fn persist_recovery_state_data(
+    recovery_state: &RecoveryStateData,
+    recovery_cache_dir: &Path,
+) -> bool {
     if recovery_state.internal_display_state.is_some()
         || recovery_state.external_display_state.is_some()
         || recovery_state.keyboard_backlight_state.is_some()
     {
         if let Err(error) = recovery_state::save(recovery_cache_dir, recovery_state) {
             logging::error!("failed to persist recovery state: {error}");
+            return false;
         }
     } else {
         if let Err(error) = recovery_state::clear(recovery_cache_dir) {
             logging::error!("failed to clear recovery state: {error}");
+            return false;
         }
     }
+    true
 }
 
 pub(super) fn persist_recovery_state(
     shared_state: &SharedMonitorState,
     recovery_cache_dir: &Path,
-) {
+) -> bool {
     let recovery_state = {
         let state = lock_state(shared_state);
         recovery_state_data(&state)
     };
-    persist_recovery_state_data(&recovery_state, recovery_cache_dir);
+    persist_recovery_state_data(&recovery_state, recovery_cache_dir)
 }
 
 pub(super) fn recover_state_if_needed(

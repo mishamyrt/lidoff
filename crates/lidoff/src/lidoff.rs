@@ -86,9 +86,10 @@ impl Lidoff {
 
     pub(crate) fn get_status(&self) -> Result<CommandOutcome> {
         let agent = self.launch_agent()?;
-        if agent.exists() && agent.is_loaded().map_err(LidoffError::Status)? {
+        let loaded = agent.is_loaded().map_err(LidoffError::Status)?;
+        if loaded && agent.is_running().map_err(LidoffError::Status)? {
             Ok(CommandOutcome::Message("service is running"))
-        } else if agent.exists() {
+        } else if loaded || agent.exists() {
             Ok(CommandOutcome::Message("service installed but not running"))
         } else {
             Ok(CommandOutcome::Message("service not installed"))

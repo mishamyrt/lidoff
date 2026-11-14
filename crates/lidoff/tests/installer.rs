@@ -6,9 +6,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const NEW_BINARY: &str = r#"#!/bin/bash
-case "$1" in
+case "${!#}" in
     --version) echo 'lidoff 0.5.0' ;;
-    install) echo 'new install' >> "$LIDOFF_TEST_EVENTS" ;;
+    install)
+        printf '%s\n' "$@" > "$LIDOFF_TEST_ROOT/install-args"
+        echo 'new install' >> "$LIDOFF_TEST_EVENTS"
+        ;;
     *) exit 1 ;;
 esac
 "#;
@@ -16,6 +19,12 @@ esac
 const OLD_BINARY: &str = r#"#!/bin/bash
 [ "$1" = uninstall ] || exit 1
 echo 'old uninstall' >> "$LIDOFF_TEST_EVENTS"
+"#;
+
+const OLD_AGENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>ProgramArguments</key><array><string>/old path/lidoff</string><string>run</string></array>
+</dict></plist>
 "#;
 
 struct InstallerTest {
@@ -96,7 +105,7 @@ cp "$LIDOFF_TEST_ARCHIVE" "$output"
         self.write_executable(".local/bin/lidoff", OLD_BINARY);
         let agents = self.root.join("Library/LaunchAgents");
         fs::create_dir_all(&agents).unwrap();
-        fs::write(agents.join("co.myrt.lidoff.plist"), b"existing agent").unwrap();
+        fs::write(agents.join("co.myrt.lidoff.plist"), OLD_AGENT).unwrap();
     }
 
     fn run(&self, arch: &str, fail_download: bool) -> Output {
@@ -157,12 +166,19 @@ fn installer_updates_an_existing_service_with_subcommands() {
 
 #[test]
 fn installer_keeps_the_old_service_when_release_validation_fails() {
-    for failure in ["download", "archive", "binary", "architecture"] {
+    for failure in ["download", "archive", "binary", "architecture", "settings"] {
         let binary = if failure == "binary" { "#!/bin/bash\nexit 1\n" } else { NEW_BINARY };
         let test = InstallerTest::new("arm64", binary);
         test.install_old_service();
         if failure == "archive" {
             fs::write(test.root.join("release.tar.xz"), b"invalid archive").unwrap();
+        }
+        if failure == "settings" {
+            fs::write(
+                test.root.join("Library/LaunchAgents/co.myrt.lidoff.plist"),
+                b"invalid plist",
+            )
+            .unwrap();
         }
         let arch = if failure == "architecture" { "unsupported" } else { "arm64" };
         assert!(!test.run(arch, failure == "download").status.success(), "{failure}");
@@ -173,4 +189,22 @@ fn installer_keeps_the_old_service_when_release_validation_fails() {
         assert!(!test.root.join("events").exists(), "{failure}");
         assert_eq!(fs::read_dir(test.root.join(".local/bin")).unwrap().count(), 1);
     }
+}
+
+#[test]
+fn installer_preserves_custom_service_options() {
+    let test = InstallerTest::new("arm64", NEW_BINARY);
+    test.install_old_service();
+    let options = "<string>--threshold</string><string>25</string><string>--interval</string><string>500</string><string>--verbose</string>";
+    fs::write(
+        test.root.join("Library/LaunchAgents/co.myrt.lidoff.plist"),
+        OLD_AGENT.replace("<string>run</string>", &format!("{options}<string>run</string>")),
+    )
+    .unwrap();
+    let output = test.run("arm64", false);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        fs::read_to_string(test.root.join("install-args")).unwrap(),
+        "--threshold\n25\n--interval\n500\n--verbose\ninstall\n"
+    );
 }

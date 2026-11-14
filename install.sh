@@ -38,6 +38,23 @@ if [ "$AGENT_WAS_ENABLED" -eq 1 ] && [ -z "$CURRENT_BINARY" ]; then
     exit 1
 fi
 
+INSTALL_ARGS=()
+if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
+    ARG_INDEX=1
+    while ARG=$(plutil -extract "ProgramArguments.$ARG_INDEX" raw -o - "$LAUNCH_AGENT_PLIST" 2>/dev/null); do
+        if [ "$ARG" = run ]; then
+            break
+        fi
+        INSTALL_ARGS+=("$ARG")
+        ARG_INDEX=$((ARG_INDEX + 1))
+    done
+    if [ "${ARG:-}" != run ]; then
+        echo "Error: could not read existing lidoff service options" >&2
+        exit 1
+    fi
+fi
+INSTALL_ARGS+=(install)
+
 mkdir -p "$INSTALL_DIR"
 DOWNLOAD_DIR=$(mktemp -d "$INSTALL_DIR/.lidoff.XXXXXX")
 trap 'rm -rf "$DOWNLOAD_DIR"' EXIT
@@ -61,7 +78,7 @@ echo "Installed to $INSTALL_DIR/$BINARY_NAME"
 
 if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
     echo "Re-enabling LaunchAgent..."
-    "$INSTALL_DIR/$BINARY_NAME" install
+    "$INSTALL_DIR/$BINARY_NAME" "${INSTALL_ARGS[@]}"
 fi
 
 # Check if install dir is in PATH

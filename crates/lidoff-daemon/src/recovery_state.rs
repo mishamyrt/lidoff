@@ -1,8 +1,9 @@
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use lidoff_display::{ExternalDisplayState, InternalDisplayState, KeyboardBacklightState};
 use rkyv::{Archive, Deserialize, Serialize, rancor::Error, util::AlignedVec};
@@ -81,6 +82,8 @@ fn save_at_cache_dir(
     recovery_cache_dir: &Path,
     recovery_state: &RecoveryStateData,
 ) -> io::Result<()> {
+    static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
+
     let path = recovery_state_path(recovery_cache_dir);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -88,7 +91,25 @@ fn save_at_cache_dir(
 
     let bytes = encode_state(recovery_state, boot_session_uuid())
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
-    fs::write(path, bytes)
+    let (temporary_path, mut file) = loop {
+        let id = NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed);
+        let temporary_path = path.with_extension(format!("{}-{id}.tmp", std::process::id()));
+        match fs::File::create_new(&temporary_path) {
+            Ok(file) => break (temporary_path, file),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    };
+
+    let result = (|| {
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary_path, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary_path);
+    }
+    result
 }
 
 fn boot_session_uuid() -> Option<&'static str> {
@@ -249,6 +270,46 @@ mod tests {
         let loaded = load_at_cache_dir(temp.path()).unwrap().unwrap();
 
         assert_eq!(loaded, recovery_state);
+
+        let replacement = RecoveryStateData::default();
+        save_at_cache_dir(temp.path(), &replacement).unwrap();
+        assert_eq!(load_at_cache_dir(temp.path()).unwrap(), Some(replacement));
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_save_preserves_previous_cache() {
+        const CACHE_ENV: &str = "LIDOFF_TEST_FAILED_SAVE_CACHE";
+        if let Some(cache_dir) = env::var_os(CACHE_ENV) {
+            assert!(
+                save_at_cache_dir(Path::new(&cache_dir), &RecoveryStateData::default())
+                    .is_err()
+            );
+            return;
+        }
+
+        let temp = TestDir::new();
+        let recovery_state = RecoveryStateData {
+            internal_display_state: Some(InternalDisplayState { brightness: 0.73 }),
+            ..RecoveryStateData::default()
+        };
+        save_at_cache_dir(temp.path(), &recovery_state).unwrap();
+        let path = super::recovery_state_path(temp.path());
+        let original = fs::read(&path).unwrap();
+
+        // Limit writes only in the child so a failed save cannot affect other tests.
+        let output = process::Command::new("/bin/sh")
+            .args(["-c", "trap '' XFSZ; ulimit -f 0; exec \"$@\"", "lidoff-save-test"])
+            .arg(env::current_exe().unwrap())
+            .args(["--exact", "recovery_state::tests::failed_save_preserves_previous_cache"])
+            .env(CACHE_ENV, temp.path())
+            .output()
+            .unwrap();
+
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(load_at_cache_dir(temp.path()).unwrap(), Some(recovery_state));
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
     }
 
     #[test]

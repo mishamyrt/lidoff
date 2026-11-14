@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use lidoff_lidsensor::LidSensor;
-use lidoff_power::{PowerNotifierError, start_power_observer};
+use lidoff_power::start_power_observer;
 
 use self::effects::{execute_monitor_action, restore_display_state};
 use self::persistence::{persist_recovery_state, recover_state_if_needed};
@@ -27,33 +27,47 @@ pub const MONITOR_DEFAULT_THRESHOLD: u32 = 30;
 pub const MONITOR_FULL_CLOSE_ANGLE: u32 = 5;
 
 const MONITOR_PARTIAL_STABILITY_SAMPLES: i32 = 2;
+const MONITOR_MAX_SENSOR_ERRORS: u32 = 3;
 const MONITOR_POST_CLOSE_GRACE_SECONDS: f64 = 1.0;
 const MONITOR_POST_OPEN_GRACE_SECONDS: f64 = 1.0;
 const MONITOR_POST_OPEN_RESTORE_SECONDS: f64 = 2.0;
 const MONITOR_POST_WAKE_GRACE_SECONDS: f64 = 1.0;
 
-pub(crate) fn run(
-    config: &DaemonConfig,
-    should_run: &AtomicBool,
-    lid_sensor: &mut LidSensor,
-) -> Result<(), PowerNotifierError> {
+pub(crate) fn run(config: &DaemonConfig, should_run: &AtomicBool) -> bool {
     let shared_state = Arc::new(Mutex::new(MonitorState::new()));
     set_power_state(shared_state.clone(), config.recovery_cache_dir.clone());
 
     recover_state_if_needed(&shared_state, &config.recovery_cache_dir);
 
+    let Ok(mut lid_sensor) = LidSensor::new() else {
+        logging::error!("failed to initialize lid sensor");
+        return false;
+    };
+    logging::info!("lid sensor initialized");
+
     if let Err(e) = start_power_observer(handle_will_sleep, handle_did_wake) {
         logging::error!("failed to start power observer: {e}");
-        return Err(e);
+        return false;
     }
 
     let interval = Duration::from_millis(config.interval_ms);
 
-    while should_run.load(Ordering::Relaxed) {
+    let mut sensor_errors = 0;
+    let success = loop {
+        if !should_run.load(Ordering::Relaxed) {
+            break true;
+        }
         let angle = match lid_sensor.get_angle() {
-            Ok(angle) => angle,
+            Ok(angle) => {
+                sensor_errors = 0;
+                angle
+            }
             Err(e) => {
                 logging::error!("failed to get lid angle: {e}");
+                sensor_errors += 1;
+                if sensor_errors >= MONITOR_MAX_SENSOR_ERRORS {
+                    break false;
+                }
                 thread::sleep(interval);
                 continue;
             }
@@ -102,9 +116,9 @@ pub(crate) fn run(
         execute_monitor_action(&shared_state, action, &config.recovery_cache_dir);
 
         thread::sleep(interval);
-    }
+    };
 
     restore_display_state(&shared_state, false, true);
     persist_recovery_state(&shared_state, &config.recovery_cache_dir);
-    Ok(())
+    success
 }

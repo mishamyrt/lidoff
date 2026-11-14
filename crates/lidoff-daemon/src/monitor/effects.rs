@@ -463,7 +463,7 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
@@ -484,10 +484,12 @@ mod tests {
         static EXTERNAL_DISPLAY_IDS: RefCell<Vec<u32>> = RefCell::new(vec![1, 2]);
         static EXTERNAL_DISABLE_IDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
         static FAIL_EXTERNAL_DISABLE: Cell<u32> = const { Cell::new(0) };
+        static EXTERNAL_RESTORE_IDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+        static FAIL_EXTERNAL_RESTORE: Cell<bool> = const { Cell::new(true) };
+        static SENSOR_INIT_SUCCEEDS: Cell<bool> = const { Cell::new(false) };
+        static SENSOR_ANGLES: RefCell<std::collections::VecDeque<i32>> = const { RefCell::new(std::collections::VecDeque::new()) };
+        static SENSOR_READS: Cell<usize> = const { Cell::new(0) };
     }
-
-    static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
-    static FAIL_EXTERNAL_RESTORE: AtomicBool = AtomicBool::new(true);
 
     #[unsafe(export_name = "DisplaysListOnline")]
     extern "C" fn displays_list_online(
@@ -574,8 +576,8 @@ mod tests {
     #[unsafe(export_name = "SkylightRestoreFromState")]
     extern "C" fn skylight_restore_from_state(display_ids: *const u32, count: usize) -> usize {
         let display_ids = unsafe { std::slice::from_raw_parts(display_ids, count) };
-        EXTERNAL_RESTORE_IDS.lock().unwrap().extend_from_slice(display_ids);
-        let fail = FAIL_EXTERNAL_RESTORE.load(Ordering::Relaxed);
+        EXTERNAL_RESTORE_IDS.with_borrow_mut(|ids| ids.extend_from_slice(display_ids));
+        let fail = FAIL_EXTERNAL_RESTORE.get();
         display_ids.iter().filter(|&&id| !fail || id != 6).count()
     }
 
@@ -804,7 +806,7 @@ mod tests {
             MonitorAction::PrepareDisplayStateForSleep { log_restore: false },
             &cache_dir,
         );
-        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2]);
+        assert_eq!(EXTERNAL_RESTORE_IDS.with_borrow(Clone::clone), [3, 6, 2]);
         let pending_state = ExternalDisplayState { skylight_display_ids: vec![6].into() };
         assert_eq!(
             shared_state.lock().unwrap().external_display_state,
@@ -821,10 +823,10 @@ mod tests {
             false,
         );
         execute_monitor_action(&shared_state, action, &cache_dir);
-        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2, 6]);
+        assert_eq!(EXTERNAL_RESTORE_IDS.with_borrow(Clone::clone), [3, 6, 2, 6]);
         assert_eq!(shared_state.lock().unwrap().external_display_state, Some(pending_state));
 
-        FAIL_EXTERNAL_RESTORE.store(false, Ordering::Relaxed);
+        FAIL_EXTERNAL_RESTORE.set(false);
         let action = handle_fully_closed_locked(
             &mut shared_state.lock().unwrap(),
             std::time::Instant::now(),
@@ -833,7 +835,7 @@ mod tests {
         assert!(matches!(action, MonitorAction::PrepareDisplayStateForSleep { .. }));
         execute_monitor_action(&shared_state, action, &cache_dir);
 
-        assert_eq!(*EXTERNAL_RESTORE_IDS.lock().unwrap(), [3, 6, 2, 6, 6]);
+        assert_eq!(EXTERNAL_RESTORE_IDS.with_borrow(Clone::clone), [3, 6, 2, 6, 6]);
         assert!(shared_state.lock().unwrap().external_display_state.is_none());
         assert!(!cache_dir.join("state.bin").exists());
         assert_eq!(
@@ -879,5 +881,99 @@ mod tests {
 
         assert_eq!(brightness_snapshot_for_dim(&mut state, 0.0), 0.64);
         assert_eq!(state.last_nonzero_brightness, 0.64);
+    }
+
+    #[unsafe(export_name = "LidSensorInit")]
+    extern "C" fn lid_sensor_init() -> u8 {
+        u8::from(SENSOR_INIT_SUCCEEDS.get())
+    }
+
+    #[unsafe(export_name = "LidSensorGetAngle")]
+    extern "C" fn lid_sensor_angle() -> i32 {
+        SENSOR_READS.set(SENSOR_READS.get() + 1);
+        SENSOR_ANGLES.with_borrow_mut(|angles| angles.pop_front().unwrap_or(-1))
+    }
+
+    #[unsafe(export_name = "LidSensorClose")]
+    extern "C" fn lid_sensor_close() {}
+
+    #[unsafe(export_name = "CaffeinateStart")]
+    extern "C" fn caffeinate_start() -> u8 {
+        0
+    }
+
+    #[unsafe(export_name = "CaffeinateStop")]
+    extern "C" fn caffeinate_stop() -> u8 {
+        0
+    }
+
+    #[unsafe(export_name = "PowerObserverRunLoop")]
+    extern "C" fn power_observer_run_loop(
+        _will_sleep: extern "C" fn(*mut std::ffi::c_void),
+        _did_wake: extern "C" fn(*mut std::ffi::c_void),
+        _context: *mut std::ffi::c_void,
+        startup: extern "C" fn(u8, *mut std::ffi::c_void),
+        startup_context: *mut std::ffi::c_void,
+    ) -> u8 {
+        startup(0, startup_context);
+        0
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn sensor_initialization_failure_still_recovers() {
+        use crate::recovery_state::{self, RecoveryStateData};
+        use lidoff_display::InternalDisplayState;
+
+        let cache_dir =
+            std::env::temp_dir().join(format!("lidoff-sensor-init-{}", std::process::id()));
+        recovery_state::save(
+            &cache_dir,
+            &RecoveryStateData {
+                internal_display_state: Some(InternalDisplayState { brightness: 0.5 }),
+                ..RecoveryStateData::default()
+            },
+        )
+        .unwrap();
+        ALLOW_BRIGHTNESS_WRITE.set(true);
+        BRIGHTNESS.set(0.0);
+        CURSOR_LOCKED.set(true);
+        let config = crate::DaemonConfig {
+            threshold: 30,
+            interval_ms: 0,
+            verbose: false,
+            recovery_cache_dir: cache_dir.clone(),
+        };
+        assert!(!crate::run(&config));
+        assert_eq!(BRIGHTNESS.get(), 0.5);
+        assert!(!CURSOR_LOCKED.get());
+        assert!(!cache_dir.join("state.bin").exists());
+        std::fs::remove_dir_all(cache_dir).unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn repeated_sensor_read_failures_restore_before_exit() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lidoff-sensor-read-{}", std::process::id()));
+        SENSOR_INIT_SUCCEEDS.set(true);
+        SENSOR_ANGLES.set([20, 20, -1, -1, -1].into());
+        ALLOW_BRIGHTNESS_WRITE.set(true);
+        BRIGHTNESS.set(0.5);
+        KEYBOARD_BRIGHTNESS.set(0.6);
+        let config = crate::DaemonConfig {
+            threshold: 30,
+            interval_ms: 0,
+            verbose: false,
+            recovery_cache_dir: cache_dir.clone(),
+        };
+        assert!(!crate::monitor::run(&config, &AtomicBool::new(true)));
+        assert_eq!(SENSOR_READS.get(), 5);
+        assert_eq!(BRIGHTNESS.get(), 0.5);
+        assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
+        assert!(!CURSOR_LOCKED.get());
+        assert_eq!(EXTERNAL_RESTORE_IDS.with_borrow(Clone::clone), [2]);
+        assert!(!cache_dir.join("state.bin").exists());
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }

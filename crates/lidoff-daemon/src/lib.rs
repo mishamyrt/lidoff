@@ -48,13 +48,7 @@ pub fn run(config: &DaemonConfig) -> bool {
         config.interval_ms
     );
 
-    let Ok(mut lid_sensor) = lidoff_lidsensor::LidSensor::new() else {
-        logging::error!("failed to initialize lid sensor");
-        return false;
-    };
-    logging::info!("lid sensor initialized");
-
-    monitor::run(config, &SHOULD_RUN, &mut lid_sensor).is_ok()
+    monitor::run(config, &SHOULD_RUN)
 }
 
 fn lock_instance(cache_dir: &Path) -> io::Result<File> {

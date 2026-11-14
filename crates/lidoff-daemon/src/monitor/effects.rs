@@ -291,8 +291,6 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
     let mut internal = InternalDisplay::new();
     if !internal.is_disabled() {
         if matches!(internal.disable(), Err(InternalDisplayError::BrightnessFailed)) {
-            clear_pending_display_state(shared_state);
-            persist_recovery_state(shared_state, recovery_cache_dir);
             logging::error!("failed to dim display");
             return;
         }
@@ -336,21 +334,23 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
         }
     };
 
-    {
+    let previous_internal_state = {
         let mut state = lock_state(shared_state);
+        let previous = state.internal_display_state;
         if state.internal_display_state.is_none() {
             let brightness_to_restore =
                 brightness_snapshot_for_dim(&mut state, current_state.brightness);
             state.internal_display_state =
                 Some(InternalDisplayState { brightness: brightness_to_restore });
         }
-    }
+        previous
+    };
 
     if matches!(
         internal.disable_from_state(current_state),
         Err(InternalDisplayError::BrightnessFailed)
     ) {
-        clear_pending_display_state(shared_state);
+        lock_state(shared_state).internal_display_state = previous_internal_state;
         persist_recovery_state(shared_state, recovery_cache_dir);
         logging::error!("failed to dim display");
         return;
@@ -363,13 +363,6 @@ fn start_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pat
     start_caffeinate(shared_state);
     persist_recovery_state(shared_state, recovery_cache_dir);
     lock_cursor();
-}
-
-fn clear_pending_display_state(shared_state: &SharedMonitorState) {
-    let mut state = lock_state(shared_state);
-    state.internal_display_state = None;
-    state.external_display_state = None;
-    state.keyboard_backlight_state = None;
 }
 
 fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorState) -> bool {
@@ -475,7 +468,7 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use super::super::state::MonitorState;
@@ -486,11 +479,12 @@ mod tests {
     };
 
     thread_local! {
+        static BRIGHTNESS: Cell<f32> = const { Cell::new(-1.0) };
+        static BRIGHTNESS_CALLS: Cell<usize> = const { Cell::new(0) };
         static KEYBOARD_BRIGHTNESS: Cell<f32> = const { Cell::new(0.6) };
         static FAIL_KEYBOARD_WRITE: Cell<bool> = const { Cell::new(false) };
     }
 
-    static BRIGHTNESS_CALLS: AtomicUsize = AtomicUsize::new(0);
     static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
     static FAIL_EXTERNAL_RESTORE: AtomicBool = AtomicBool::new(true);
 
@@ -516,13 +510,13 @@ mod tests {
 
     #[unsafe(export_name = "BrightnessGet")]
     extern "C" fn brightness_get() -> f32 {
-        BRIGHTNESS_CALLS.fetch_add(1, Ordering::Relaxed);
-        -1.0
+        BRIGHTNESS_CALLS.set(BRIGHTNESS_CALLS.get() + 1);
+        BRIGHTNESS.get()
     }
 
     #[unsafe(export_name = "BrightnessSet")]
     extern "C" fn brightness_set(_brightness: f32) -> u8 {
-        BRIGHTNESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        BRIGHTNESS_CALLS.set(BRIGHTNESS_CALLS.get() + 1);
         0
     }
 
@@ -589,6 +583,51 @@ mod tests {
         );
         worker.join().unwrap();
         assert!(shared_state.lock().unwrap().keyboard_backlight_state.is_none());
+    }
+
+    #[test]
+    fn failed_dimming_preserves_pending_recovery_state() {
+        use crate::recovery_state::{self, RecoveryStateData};
+        use lidoff_display::{
+            ExternalDisplayState, InternalDisplayState, KeyboardBacklightState,
+        };
+
+        BRIGHTNESS.set(0.25);
+        for action in [MonitorAction::StartPartialDim, MonitorAction::ResumePartialDim] {
+            let mut pending = RecoveryStateData {
+                external_display_state: Some(ExternalDisplayState {
+                    skylight_display_ids: vec![2].into(),
+                }),
+                ..RecoveryStateData::default()
+            };
+            if action == MonitorAction::ResumePartialDim {
+                pending.internal_display_state =
+                    Some(InternalDisplayState { brightness: 0.5 });
+                pending.keyboard_backlight_state =
+                    Some(KeyboardBacklightState { brightness: 0.6 });
+            }
+            let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+            {
+                let mut state = shared_state.lock().unwrap();
+                state.internal_display_state = pending.internal_display_state;
+                state.external_display_state = pending.external_display_state.clone();
+                state.keyboard_backlight_state = pending.keyboard_backlight_state;
+            }
+            let cache_dir = std::env::temp_dir()
+                .join(format!("lidoff-dim-failure-{action:?}-{}", std::process::id()));
+            super::persist_recovery_state(&shared_state, &cache_dir);
+
+            execute_monitor_action(&shared_state, action, &cache_dir);
+
+            {
+                let state = shared_state.lock().unwrap();
+                assert_eq!(state.internal_display_state, pending.internal_display_state);
+                assert_eq!(state.external_display_state, pending.external_display_state);
+                assert_eq!(state.keyboard_backlight_state, pending.keyboard_backlight_state);
+            }
+            assert_eq!(recovery_state::load(&cache_dir), Some(pending));
+            std::fs::remove_dir_all(cache_dir).unwrap();
+        }
     }
 
     #[test]
@@ -667,7 +706,7 @@ mod tests {
             execute_monitor_action(&shared_state, action, &cache_dir);
         }
 
-        assert_eq!(BRIGHTNESS_CALLS.load(Ordering::Relaxed), 0);
+        assert_eq!(BRIGHTNESS_CALLS.get(), 0);
         assert!(!shared_state.lock().unwrap().caffeinate_active);
         assert!(!cache_dir.exists());
     }

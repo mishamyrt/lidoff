@@ -114,7 +114,7 @@ impl Lidoff {
 
     fn launch_agent(&self) -> Result<LaunchAgent> {
         let bin_path = executable_path()?;
-        build_agent(self.threshold, self.interval, &bin_path)
+        build_agent(self.threshold, self.interval, self.verbose, &bin_path)
     }
 }
 
@@ -141,13 +141,23 @@ fn resolve_executable_path(exec_path: &Path) -> io::Result<PathBuf> {
     Ok(resolved)
 }
 
-fn build_agent(threshold: u32, interval: u64, bin_path: &Path) -> Result<LaunchAgent> {
-    let agent = LaunchAgent::builder(LAUNCH_AGENT_LABEL)
+fn build_agent(
+    threshold: u32,
+    interval: u64,
+    verbose: bool,
+    bin_path: &Path,
+) -> Result<LaunchAgent> {
+    let mut builder = LaunchAgent::builder(LAUNCH_AGENT_LABEL);
+    builder
         .arg(bin_path.to_string_lossy())
         .arg("--threshold".to_string())
         .arg(threshold.to_string())
         .arg("--interval".to_string())
-        .arg(interval.to_string())
+        .arg(interval.to_string());
+    if verbose {
+        builder.arg("--verbose");
+    }
+    let agent = builder
         .arg("run")
         .stdout_path("/tmp/lidoff.stdout")
         .stderr_path("/tmp/lidoff.stderr")
@@ -242,7 +252,7 @@ mod tests {
             resolve_executable_path(&old_version.join("bin/lidoff")).unwrap(),
             expected
         );
-        let agent = build_agent(30, 300, &resolved).unwrap();
+        let agent = build_agent(30, 300, false, &resolved).unwrap();
         assert_eq!(Path::new(&agent.program_arguments[0]), expected);
 
         fs::remove_file(&opt_path).unwrap();
@@ -253,5 +263,18 @@ mod tests {
             fs::read(&agent.program_arguments[0]).unwrap(),
             fs::read(new_version.join("bin/lidoff")).unwrap()
         );
+    }
+
+    #[test]
+    fn installed_agent_preserves_verbose_option() {
+        for verbose in [false, true] {
+            let agent = build_agent(25, 500, verbose, Path::new("/tmp/lidoff")).unwrap();
+            let mut expected = vec!["/tmp/lidoff", "--threshold", "25", "--interval", "500"];
+            if verbose {
+                expected.push("--verbose");
+            }
+            expected.push("run");
+            assert_eq!(agent.program_arguments, expected);
+        }
     }
 }

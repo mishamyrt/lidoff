@@ -20,11 +20,11 @@ lidoff-lidsensor = { path = "./crates/lidoff-lidsensor" }
 lidoff-power = { path = "./crates/lidoff-power" }
 
 bincode = "1.3"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 serde = "1.0"
-smallvec = { version = "1.15", features = ["serde"] }
+smallvec = { version = "1.16", features = ["serde"] }
 thiserror = "2"
-lunchd = "0.2.0"
+lunchd = "0.2.1"
 
 [workspace.lints.rust]
 unreachable_pub = "warn"

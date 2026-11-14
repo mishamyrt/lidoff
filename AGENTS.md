@@ -14,7 +14,7 @@
 - `crates/lidoff` is intentionally thin: clap CLI parsing, LaunchAgent install/uninstall, cache path resolution, and delegation to `lidoff-daemon`.
 - `crates/lidoff-daemon` owns the monitor loop, lid-state transitions, power-event handling, display effects, and persisted recovery state.
 - `crates/lidoff-display`, `crates/lidoff-lidsensor`, and `crates/lidoff-power` are macOS native-integration wrappers with C shims compiled from each crate's `build.rs`.
-- Current CLI subcommands are `install`, `uninstall`, and `run`; options such as `--threshold`, `--interval`, and `--verbose` are global and must appear before the subcommand.
+- Current CLI subcommands are `install`, `uninstall`, `status`, and `run`; options such as `--threshold`, `--interval`, and `--verbose` are global and must appear before the subcommand.
 
 ## macOS Gotchas
 
@@ -26,4 +26,3 @@
 
 - Releases are configured by `dist-workspace.toml` for cargo-dist `0.31.0`, Homebrew publishing to `mishamyrt/homebrew-tap`, and `aarch64-apple-darwin` plus `x86_64-apple-darwin` targets.
 - `Makefile` has a `publish` target that edits versions, updates `Cargo.lock`, runs `git-cliff`, amends, tags, and pushes; do not run it unless explicitly asked.
-- `install.sh` and `crates/lidoff/README.md` currently contain older `--enable`/`--disable` style examples; prefer the clap source/root README unless you are fixing those references.

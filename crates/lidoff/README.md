@@ -7,7 +7,8 @@ This crate is intentionally thin: it parses user-facing flags, installs or remov
 ## Example
 
 ```bash
-lidoff --threshold 30 --interval 300
-lidoff --enable --threshold 25
-lidoff --disable
+lidoff --threshold 30 --interval 300 run
+lidoff --threshold 25 install
+lidoff status
+lidoff uninstall
 ```

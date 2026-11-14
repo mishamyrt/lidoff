@@ -81,6 +81,7 @@ lidoff [OPTIONS] <COMMAND>
 Commands:
   install    Install service as launch agent
   uninstall  Uninstall service's launch agent
+  status     Check service status
   run        Start the monitor in the foreground
 
 Options:

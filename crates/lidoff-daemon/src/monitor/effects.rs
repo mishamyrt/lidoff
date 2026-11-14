@@ -385,21 +385,19 @@ fn capture_and_disable_keyboard_backlight_state(shared_state: &SharedMonitorStat
         }
 
         return handle_keyboard_backlight_disable_result(
-            shared_state,
             keyboard.disable_from_state(current_state),
         );
     }
 
-    disable_keyboard_backlight(shared_state)
+    disable_keyboard_backlight()
 }
 
-fn disable_keyboard_backlight(shared_state: &SharedMonitorState) -> bool {
+fn disable_keyboard_backlight() -> bool {
     let mut keyboard = KeyboardBacklight::new();
-    handle_keyboard_backlight_disable_result(shared_state, keyboard.disable())
+    handle_keyboard_backlight_disable_result(keyboard.disable())
 }
 
 fn handle_keyboard_backlight_disable_result(
-    shared_state: &SharedMonitorState,
     result: Result<(), KeyboardBacklightError>,
 ) -> bool {
     match result {
@@ -410,8 +408,6 @@ fn handle_keyboard_backlight_disable_result(
         Err(KeyboardBacklightError::AlreadyDisabled) => false,
         Err(error) => {
             logging::error!("failed to dim keyboard backlight: {error}");
-            let mut state = lock_state(shared_state);
-            state.keyboard_backlight_state = None;
             false
         }
     }
@@ -582,7 +578,30 @@ mod tests {
                 .expect("keyboard disable deadlocked")
         );
         worker.join().unwrap();
-        assert!(shared_state.lock().unwrap().keyboard_backlight_state.is_none());
+        assert_eq!(
+            shared_state.lock().unwrap().keyboard_backlight_state,
+            Some(lidoff_display::KeyboardBacklightState { brightness: 0.6 })
+        );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn keyboard_write_retry_preserves_original_brightness() {
+        use lidoff_display::KeyboardBacklightState;
+
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        let saved = Some(KeyboardBacklightState { brightness: 0.6 });
+        shared_state.lock().unwrap().keyboard_backlight_state = saved;
+        KEYBOARD_BRIGHTNESS.set(-1.0);
+        FAIL_KEYBOARD_WRITE.set(true);
+        assert!(!capture_and_disable_keyboard_backlight_state(&shared_state));
+        assert_eq!(shared_state.lock().unwrap().keyboard_backlight_state, saved);
+
+        KEYBOARD_BRIGHTNESS.set(0.0);
+        FAIL_KEYBOARD_WRITE.set(false);
+        capture_and_disable_keyboard_backlight_state(&shared_state);
+        assert!(super::restore_keyboard_backlight_state(&shared_state, false, true));
+        assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
     }
 
     #[test]

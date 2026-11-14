@@ -81,10 +81,14 @@ fn restore_display_state_locked(
     log_restore: bool,
     clear_internal_after_restore: bool,
 ) {
-    unlock_cursor();
+    let cursor_unlocked = unlock_cursor();
     restore_external_display_state(shared_state);
-    restore_keyboard_backlight_state(shared_state, log_restore, true);
-    restore_internal_display_state(shared_state, log_restore, clear_internal_after_restore);
+    restore_keyboard_backlight_state(shared_state, log_restore, cursor_unlocked);
+    restore_internal_display_state(
+        shared_state,
+        log_restore,
+        clear_internal_after_restore && cursor_unlocked,
+    );
     stop_caffeinate(shared_state);
 }
 
@@ -435,7 +439,7 @@ fn unlock_cursor() -> bool {
             logging::debug!("unlocked cursor movement");
             true
         }
-        Err(CursorError::AlreadyUnlocked) => false,
+        Err(CursorError::AlreadyUnlocked) => true,
         Err(error) => {
             logging::error!("failed to unlock cursor movement: {error}");
             false
@@ -479,6 +483,9 @@ mod tests {
         static BRIGHTNESS_CALLS: Cell<usize> = const { Cell::new(0) };
         static KEYBOARD_BRIGHTNESS: Cell<f32> = const { Cell::new(0.6) };
         static FAIL_KEYBOARD_WRITE: Cell<bool> = const { Cell::new(false) };
+        static ALLOW_BRIGHTNESS_WRITE: Cell<bool> = const { Cell::new(false) };
+        static CURSOR_LOCKED: Cell<bool> = const { Cell::new(false) };
+        static FAIL_CURSOR_UNLOCK: Cell<bool> = const { Cell::new(false) };
     }
 
     static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
@@ -511,9 +518,13 @@ mod tests {
     }
 
     #[unsafe(export_name = "BrightnessSet")]
-    extern "C" fn brightness_set(_brightness: f32) -> u8 {
+    extern "C" fn brightness_set(brightness: f32) -> u8 {
         BRIGHTNESS_CALLS.set(BRIGHTNESS_CALLS.get() + 1);
-        0
+        if !ALLOW_BRIGHTNESS_WRITE.get() {
+            return 0;
+        }
+        BRIGHTNESS.set(brightness);
+        1
     }
 
     #[unsafe(export_name = "KeyboardBacklightGet")]
@@ -532,16 +543,21 @@ mod tests {
 
     #[unsafe(export_name = "CursorIsLocked")]
     extern "C" fn cursor_is_locked() -> u8 {
-        0
+        u8::from(CURSOR_LOCKED.get())
     }
 
     #[unsafe(export_name = "CursorLock")]
     extern "C" fn cursor_lock() -> u8 {
+        CURSOR_LOCKED.set(true);
         1
     }
 
     #[unsafe(export_name = "CursorUnlock")]
     extern "C" fn cursor_unlock() -> u8 {
+        if FAIL_CURSOR_UNLOCK.get() {
+            return 0;
+        }
+        CURSOR_LOCKED.set(false);
         1
     }
 
@@ -602,6 +618,45 @@ mod tests {
         capture_and_disable_keyboard_backlight_state(&shared_state);
         assert!(super::restore_keyboard_backlight_state(&shared_state, false, true));
         assert_eq!(KEYBOARD_BRIGHTNESS.get(), 0.6);
+    }
+
+    #[test]
+    fn failed_cursor_unlock_retains_recovery_until_retry_succeeds() {
+        use super::super::transitions::handle_open_locked;
+        use lidoff_display::InternalDisplayState;
+
+        let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+        shared_state.lock().unwrap().internal_display_state =
+            Some(InternalDisplayState { brightness: 0.5 });
+        ALLOW_BRIGHTNESS_WRITE.set(true);
+        CURSOR_LOCKED.set(true);
+        FAIL_CURSOR_UNLOCK.set(true);
+        let cache_dir =
+            std::env::temp_dir().join(format!("lidoff-cursor-retry-{}", std::process::id()));
+
+        for failed in [true, false] {
+            FAIL_CURSOR_UNLOCK.set(failed);
+            let action = handle_open_locked(
+                &mut shared_state.lock().unwrap(),
+                std::time::Instant::now(),
+                false,
+            );
+            assert!(matches!(action, MonitorAction::RestoreDisplayState { .. }));
+            execute_monitor_action(&shared_state, action, &cache_dir);
+            assert_eq!(CURSOR_LOCKED.get(), failed);
+            assert_eq!(cache_dir.join("state.bin").exists(), failed);
+        }
+
+        assert!(shared_state.lock().unwrap().internal_display_state.is_none());
+        assert_eq!(
+            handle_open_locked(
+                &mut shared_state.lock().unwrap(),
+                std::time::Instant::now(),
+                false,
+            ),
+            MonitorAction::None
+        );
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
     #[test]

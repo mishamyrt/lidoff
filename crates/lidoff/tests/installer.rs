@@ -2,6 +2,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const NEW_BINARY: &str = r#"#!/bin/bash
@@ -21,11 +22,14 @@ struct InstallerTest {
     root: PathBuf,
 }
 
+static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
 impl InstallerTest {
     fn new(arch: &str, binary: &str) -> Self {
+        let id = NEXT_TEST_DIR_ID.fetch_add(1, Ordering::Relaxed);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let root = std::env::temp_dir()
-            .join(format!("lidoff installer test-{}-{timestamp}", std::process::id()));
+            .join(format!("lidoff installer test-{}-{timestamp}-{id}", std::process::id()));
         let test = Self { root };
         fs::create_dir_all(test.root.join("tools")).unwrap();
         let installer = fs::read_to_string(

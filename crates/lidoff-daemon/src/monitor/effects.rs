@@ -255,9 +255,9 @@ fn apply_internal_display_state(
 
 fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState) -> bool {
     let mut external = ExternalDisplays::new();
-    let disable_result = match external.capture_and_disable() {
+    let pending = lock_state(shared_state).external_display_state.clone().unwrap_or_default();
+    let disable_result = match external.capture_and_disable(&pending) {
         Ok(result) => result,
-        Err(ExternalDisplayError::AlreadyDisabled) => return true,
         Err(error) => {
             logging::error!("external display disable failed: {error}");
             return false;
@@ -274,7 +274,7 @@ fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState)
                     pending.skylight_display_ids.push(id);
                 }
             }
-        } else {
+        } else if !saved_state.skylight_display_ids.is_empty() {
             state.external_display_state = Some(saved_state);
         }
     }
@@ -284,10 +284,9 @@ fn capture_and_disable_external_display_state(shared_state: &SharedMonitorState)
             "external display disable failed: {}",
             ExternalDisplayError::DisableFailed { disabled, failed }
         );
-        return false;
     }
 
-    true
+    disabled > 0
 }
 
 fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Path) {
@@ -311,11 +310,7 @@ fn resume_partial_dim(shared_state: &SharedMonitorState, recovery_cache_dir: &Pa
         changed = true;
     }
 
-    let mut external = ExternalDisplays::new();
-    if lock_state(shared_state).external_display_state.is_none()
-        && !external.is_disabled()
-        && capture_and_disable_external_display_state(shared_state)
-    {
+    if capture_and_disable_external_display_state(shared_state) {
         changed = true;
     }
 
@@ -467,7 +462,7 @@ fn brightness_snapshot_for_dim(state: &mut MonitorState, current_brightness: f32
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -486,6 +481,9 @@ mod tests {
         static ALLOW_BRIGHTNESS_WRITE: Cell<bool> = const { Cell::new(false) };
         static CURSOR_LOCKED: Cell<bool> = const { Cell::new(false) };
         static FAIL_CURSOR_UNLOCK: Cell<bool> = const { Cell::new(false) };
+        static EXTERNAL_DISPLAY_IDS: RefCell<Vec<u32>> = RefCell::new(vec![1, 2]);
+        static EXTERNAL_DISABLE_IDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+        static FAIL_EXTERNAL_DISABLE: Cell<u32> = const { Cell::new(0) };
     }
 
     static EXTERNAL_RESTORE_IDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
@@ -497,12 +495,13 @@ mod tests {
         capacity: usize,
         count_out: *mut usize,
     ) -> u8 {
-        assert!(capacity >= 2);
-        unsafe {
-            *display_ids = 1;
-            *display_ids.add(1) = 2;
-            *count_out = 2;
-        }
+        EXTERNAL_DISPLAY_IDS.with_borrow(|ids| {
+            assert!(capacity >= ids.len());
+            unsafe {
+                std::ptr::copy_nonoverlapping(ids.as_ptr(), display_ids, ids.len());
+                *count_out = ids.len();
+            }
+        });
         1
     }
 
@@ -567,8 +566,9 @@ mod tests {
     }
 
     #[unsafe(export_name = "SkylightDisableDisplay")]
-    extern "C" fn skylight_disable_display(_display_id: u32) -> u8 {
-        1
+    extern "C" fn skylight_disable_display(display_id: u32) -> u8 {
+        EXTERNAL_DISABLE_IDS.with_borrow_mut(|ids| ids.push(display_id));
+        u8::from(display_id != FAIL_EXTERNAL_DISABLE.get())
     }
 
     #[unsafe(export_name = "SkylightRestoreFromState")]
@@ -657,6 +657,48 @@ mod tests {
             MonitorAction::None
         );
         std::fs::remove_dir_all(cache_dir).unwrap();
+    }
+
+    #[test]
+    fn external_disable_retries_failures_and_picks_up_new_displays() {
+        use lidoff_display::{InternalDisplayState, KeyboardBacklightState};
+
+        for displays in [vec![1, 2], vec![1, 2, 3]] {
+            EXTERNAL_DISPLAY_IDS.set(displays);
+            EXTERNAL_DISABLE_IDS.take();
+            FAIL_EXTERNAL_DISABLE.set(2);
+            BRIGHTNESS.set(0.0);
+            KEYBOARD_BRIGHTNESS.set(0.0);
+            let shared_state = Arc::new(Mutex::new(MonitorState::new()));
+            {
+                let mut state = shared_state.lock().unwrap();
+                state.internal_display_state = Some(InternalDisplayState { brightness: 0.5 });
+                state.keyboard_backlight_state =
+                    Some(KeyboardBacklightState { brightness: 0.6 });
+                state.caffeinate_active = true;
+            }
+            let cache_dir = std::env::temp_dir()
+                .join(format!("lidoff-external-retry-{}", std::process::id()));
+            execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
+
+            FAIL_EXTERNAL_DISABLE.set(0);
+            execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
+            EXTERNAL_DISPLAY_IDS.with_borrow_mut(|ids| ids.push(4));
+            execute_monitor_action(&shared_state, MonitorAction::ResumePartialDim, &cache_dir);
+
+            EXTERNAL_DISABLE_IDS.with_borrow(|ids| {
+                assert_eq!(ids.iter().filter(|&&id| id == 2).count(), 2);
+                assert_eq!(ids.iter().filter(|&&id| id == 3).count(), ids.contains(&3).into());
+                assert_eq!(ids.iter().filter(|&&id| id == 4).count(), 1);
+            });
+            let saved = crate::recovery_state::load(&cache_dir).unwrap();
+            let expected: Vec<_> = EXTERNAL_DISPLAY_IDS.with_borrow(|ids| ids[1..].to_vec());
+            let mut actual =
+                saved.external_display_state.unwrap().skylight_display_ids.to_vec();
+            actual.sort_unstable();
+            assert_eq!(actual, expected);
+            std::fs::remove_dir_all(cache_dir).unwrap();
+        }
     }
 
     #[test]

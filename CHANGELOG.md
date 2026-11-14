@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2](https://github.com/mishamyrt/lidoff/compare/v0.5.1..v0.5.2) - 2026-11-14
+
+### 🐛 Bug Fixes
+
+- Handle stale external display recovery state
+- Avoid keyboard backlight error deadlock
+- Retain recovery state after dimming errors
+- Save keyboard brightness before retrying dim
+- Replace recovery cache atomically
+- Preserve keyboard brightness on retry failure
+- Retry failed cursor restoration
+- Prevent concurrent daemon instances
+- Retry external display shutdown per display
+- Restore devices when the lid sensor fails
+- Save recovery state before dimming devices
+- Create LaunchAgents directory on install
+- Report actual launch agent running state
+- Preserve verbose mode in installed agent
+- Retain service options during quick upgrades
+
+### 🚜 Refactor
+
+- Use zero-copy storage
+- Remove unused display shutdown path
+
+### 📚 Documentation
+
+- Update CLI command examples
+
 ## [0.5.1](https://github.com/mishamyrt/lidoff/compare/v0.5.0..v0.5.1) - 2026-10-20
 
 ### 🚀 Features

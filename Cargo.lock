@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "clap",
  "lidoff-daemon",
@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-daemon"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "lidoff-display",
  "lidoff-lidsensor",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-display"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "cc",
  "rkyv",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-lidsensor"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "cc",
  "thiserror",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "lidoff-power"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "cc",
  "thiserror",

@@ -1,19 +1,17 @@
-mod lidoff;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-use std::error::Error;
-
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use lidoff_daemon::{
-    MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD, MONITOR_FULL_CLOSE_ANGLE,
+    DaemonConfig, MONITOR_DEFAULT_INTERVAL_MS, MONITOR_DEFAULT_THRESHOLD,
+    MONITOR_FULL_CLOSE_ANGLE,
 };
-
-use crate::lidoff::{CommandOutcome, Lidoff};
 
 #[derive(Parser, Debug)]
 #[command(
     name = "lidoff",
     version,
-    about = "MacBook lid angle display, keyboard, and cursor daemon",
+    about = "Monitor the MacBook lid angle in the foreground",
     long_about = None,
     after_help = behavior_help()
 )]
@@ -40,21 +38,6 @@ struct Cli {
 
     #[arg(short = 'v', long = "verbose", help = "Log current lid angle")]
     verbose: bool,
-
-    #[clap(subcommand)]
-    command: Command,
-}
-
-#[derive(Debug, Subcommand, Clone)]
-enum Command {
-    /// Install service as launch agent
-    Install,
-    /// Uninstall service's launch agent
-    Uninstall,
-    /// Check service status
-    Status,
-    /// Start the monitor in the foreground
-    Run,
 }
 
 fn behavior_help() -> String {
@@ -63,32 +46,25 @@ fn behavior_help() -> String {
     )
 }
 
-#[allow(clippy::print_stderr, clippy::print_stdout)]
-fn main() -> std::process::ExitCode {
+#[allow(clippy::print_stderr)]
+fn main() -> ExitCode {
     let cli = Cli::parse();
-
-    let lidoff = Lidoff::new(cli.threshold, cli.interval_ms, cli.verbose);
-
-    let result = match cli.command {
-        Command::Install => lidoff.install(),
-        Command::Uninstall => lidoff.uninstall(),
-        Command::Run => lidoff.run_monitor(),
-        Command::Status => lidoff.get_status(),
+    let Some(home) = std::env::var_os("HOME") else {
+        eprintln!("lidoff: home directory not found");
+        return ExitCode::FAILURE;
+    };
+    let config = DaemonConfig {
+        threshold: cli.threshold,
+        interval_ms: cli.interval_ms,
+        verbose: cli.verbose,
+        recovery_cache_dir: PathBuf::from(home).join("Library/Caches/co.myrt.lidoff"),
     };
 
-    match result {
-        Ok(CommandOutcome::Silent) => std::process::ExitCode::SUCCESS,
-        Ok(CommandOutcome::Message(message)) => {
-            println!("{message}");
-            std::process::ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("lidoff: {error}");
-            if let Some(source_err) = error.source() {
-                eprintln!("{source_err}");
-            }
-            std::process::ExitCode::FAILURE
-        }
+    if lidoff_daemon::run(&config) {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("lidoff: failed to run monitor");
+        ExitCode::FAILURE
     }
 }
 
@@ -104,10 +80,10 @@ mod tests {
             ("--interval", ["50", "300", "5000"], ["49", "5001", "-1", "text"]),
         ] {
             for value in valid {
-                assert!(Cli::try_parse_from(["lidoff", flag, value, "run"]).is_ok());
+                assert!(Cli::try_parse_from(["lidoff", flag, value]).is_ok());
             }
             for value in invalid {
-                assert!(Cli::try_parse_from(["lidoff", flag, value, "run"]).is_err());
+                assert!(Cli::try_parse_from(["lidoff", flag, value]).is_err());
             }
         }
     }

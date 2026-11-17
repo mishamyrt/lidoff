@@ -1,0 +1,16 @@
+diff --git a/Formula/lidoff.rb b/Formula/lidoff.rb
+index b0c36ce..d4a0b48 100644
+--- a/Formula/lidoff.rb
++++ b/Formula/lidoff.rb
+@@ -52,4 +52,11 @@ class Lidoff < Formula
+     # sample files.
+     pkgshare.install(*leftover_contents) unless leftover_contents.empty?
+   end
++
++  service do
++    run opt_bin/"lidoff"
++    keep_alive true
++    log_path var/"log/lidoff.log"
++    error_log_path var/"log/lidoff.log"
++  end
+ end

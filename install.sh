@@ -4,7 +4,6 @@ set -euo pipefail
 REPO="mishamyrt/lidoff"
 INSTALL_DIR="$HOME/.local/bin"
 BINARY_NAME="lidoff"
-LAUNCH_AGENT_PLIST="$HOME/Library/LaunchAgents/co.myrt.lidoff.plist"
 
 echo "Installing lidoff..."
 
@@ -19,42 +18,6 @@ case "$(uname -m)" in
     *) echo "Error: unsupported architecture" >&2; exit 1 ;;
 esac
 
-# Detect currently installed binary (PATH first, then default install location)
-CURRENT_BINARY=""
-if command -v "$BINARY_NAME" >/dev/null 2>&1; then
-    CURRENT_BINARY=$(command -v "$BINARY_NAME")
-elif [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
-    CURRENT_BINARY="$INSTALL_DIR/$BINARY_NAME"
-fi
-
-# Remember whether LaunchAgent was enabled before update
-AGENT_WAS_ENABLED=0
-if [ -f "$LAUNCH_AGENT_PLIST" ]; then
-    AGENT_WAS_ENABLED=1
-fi
-
-if [ "$AGENT_WAS_ENABLED" -eq 1 ] && [ -z "$CURRENT_BINARY" ]; then
-    echo "Error: lidoff LaunchAgent is enabled, but binary was not found to uninstall it" >&2
-    exit 1
-fi
-
-INSTALL_ARGS=()
-if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
-    ARG_INDEX=1
-    while ARG=$(plutil -extract "ProgramArguments.$ARG_INDEX" raw -o - "$LAUNCH_AGENT_PLIST" 2>/dev/null); do
-        if [ "$ARG" = run ]; then
-            break
-        fi
-        INSTALL_ARGS+=("$ARG")
-        ARG_INDEX=$((ARG_INDEX + 1))
-    done
-    if [ "${ARG:-}" != run ]; then
-        echo "Error: could not read existing lidoff service options" >&2
-        exit 1
-    fi
-fi
-INSTALL_ARGS+=(install)
-
 mkdir -p "$INSTALL_DIR"
 DOWNLOAD_DIR=$(mktemp -d "$INSTALL_DIR/.lidoff.XXXXXX")
 trap 'rm -rf "$DOWNLOAD_DIR"' EXIT
@@ -68,18 +31,8 @@ tar -xJf "$DOWNLOAD_DIR/release.tar.xz" -C "$DOWNLOAD_DIR" "$ARCHIVE_DIR/$BINARY
 "$DOWNLOAD_DIR/$ARCHIVE_DIR/$BINARY_NAME" --version >/dev/null
 install -m 755 "$DOWNLOAD_DIR/$ARCHIVE_DIR/$BINARY_NAME" "$DOWNLOAD_DIR/$BINARY_NAME"
 
-if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
-    echo "Uninstalling existing LaunchAgent..."
-    "$CURRENT_BINARY" uninstall
-fi
-
 mv -f "$DOWNLOAD_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
 echo "Installed to $INSTALL_DIR/$BINARY_NAME"
-
-if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
-    echo "Re-enabling LaunchAgent..."
-    "$INSTALL_DIR/$BINARY_NAME" "${INSTALL_ARGS[@]}"
-fi
 
 # Check if install dir is in PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then

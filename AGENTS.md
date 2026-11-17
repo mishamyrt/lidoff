@@ -11,10 +11,10 @@
 ## Architecture
 
 - This is a Rust 2024 workspace with all real crates under `crates/`; workspace lint settings live in root `Cargo.toml`.
-- `crates/lidoff` is intentionally thin: clap CLI parsing, LaunchAgent install/uninstall, cache path resolution, and delegation to `lidoff-daemon`.
+- `crates/lidoff` handles clap CLI parsing, cache path resolution, and delegation to `lidoff-daemon`.
 - `crates/lidoff-daemon` owns the monitor loop, lid-state transitions, power-event handling, display effects, and persisted recovery state.
 - `crates/lidoff-display`, `crates/lidoff-lidsensor`, and `crates/lidoff-power` are macOS native-integration wrappers with C shims compiled from each crate's `build.rs`.
-- Current CLI subcommands are `install`, `uninstall`, `status`, and `run`; options such as `--threshold`, `--interval`, and `--verbose` are global and must appear before the subcommand.
+- `lidoff` runs in the foreground, with optional `--threshold`, `--interval`, and `--verbose` flags. Homebrew manages the background service.
 
 ## macOS Gotchas
 
@@ -24,5 +24,5 @@
 
 ## Release Notes
 
-- Releases are configured by `dist-workspace.toml` for cargo-dist `0.31.0`, Homebrew publishing to `mishamyrt/homebrew-tap`, and `aarch64-apple-darwin` plus `x86_64-apple-darwin` targets.
+- Releases are configured by `dist-workspace.toml` for cargo-dist `0.34.0`, Homebrew publishing to `mishamyrt/homebrew-tap`, and `aarch64-apple-darwin` plus `x86_64-apple-darwin` targets. The release workflow applies `.github/patches/homebrew-service.patch` to the generated formula before uploading it.
 - `Makefile` has a `publish` target that edits versions, updates `Cargo.lock`, runs `git-cliff`, amends, tags, and pushes; do not run it unless explicitly asked.

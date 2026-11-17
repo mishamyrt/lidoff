@@ -36,7 +36,6 @@ https://github.com/user-attachments/assets/86740896-9a4b-4e2e-a616-a1353a61575c
 - Starts a `caffeinate` session while the partial-close state is active.
 - Restores saved brightness values when the lid opens or fully closes.
 - Disables and restores external displays when possible.
-- Installs as a per-user macOS LaunchAgent.
 
 ## Requirements
 
@@ -49,14 +48,12 @@ https://github.com/user-attachments/assets/86740896-9a4b-4e2e-a616-a1353a61575c
 
 ```bash
 brew install mishamyrt/tap/lidoff
-lidoff install
 ```
 
 ### Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mishamyrt/lidoff/master/install.sh | bash
-lidoff install
 ```
 
 The quick installer places the binary in `~/.local/bin`. Make sure that directory is in your `PATH`.
@@ -70,42 +67,35 @@ rustup toolchain install stable
 cargo build --release --package lidoff
 mkdir -p "$HOME/.local/bin"
 install -m 755 target/release/lidoff "$HOME/.local/bin/lidoff"
-lidoff install
 ```
 
 ## Usage
 
-```text
-lidoff [OPTIONS] <COMMAND>
+### Foreground
 
-Commands:
-  install    Install service as launch agent
-  uninstall  Uninstall service's launch agent
-  status     Check service status
-  run        Start the monitor in the foreground
-
-Options:
-  -t, --threshold <degrees>  Lid angle threshold in range 10-60 degrees [default: 30]
-  -i, --interval <ms>        Polling interval in ms in range 50-5000 ms [default: 300]
-  -v, --verbose              Log current lid angle
-  -h, --help                 Print help
-  -V, --version              Print version
-```
-
-Options are global and must be passed before the command:
+Run `lidoff` to monitor the lid and see logs in your terminal. Press Ctrl+C to stop.
 
 ```bash
-# Run in the foreground with default settings
-lidoff run
+lidoff
+lidoff --threshold 25 --interval 500 --verbose
+lidoff --help
+```
 
-# Run in the foreground and print lid angle updates
-lidoff --verbose run
+### Background service
 
-# Install LaunchAgent with a custom threshold and polling interval
-lidoff --threshold 25 --interval 500 install
+With the Homebrew installation, start the service to run `lidoff` with its default settings and register it to start at login.
 
-# Remove the LaunchAgent
-lidoff uninstall
+```bash
+brew services start lidoff
+brew services info lidoff
+brew services restart lidoff
+brew services stop lidoff
+```
+
+The service writes its logs to `var/log/lidoff.log` under the Homebrew prefix. This is typically `/opt/homebrew/var/log/lidoff.log` on Apple Silicon or `/usr/local/var/log/lidoff.log` on Intel. Use `brew --prefix` to follow the log on any installation.
+
+```bash
+tail -F "$(brew --prefix)/var/log/lidoff.log"
 ```
 
 ## Behavior
@@ -122,7 +112,7 @@ External display shutdown uses the available macOS display controls and falls ba
 
 The project is a Rust workspace under `crates/`:
 
-- `crates/lidoff` contains the CLI and LaunchAgent integration.
+- `crates/lidoff` parses CLI options and starts the monitor.
 - `crates/lidoff-daemon` contains monitor state management and runtime orchestration.
 - `crates/lidoff-display`, `crates/lidoff-lidsensor`, and `crates/lidoff-power` contain macOS integration shims.
 
